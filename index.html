@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GIS Toolbox</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin="anonymous">
+
+    <!-- App CSS -->
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/mobile.css">
+
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+</head>
+<body>
+    <!-- ================================ -->
+    <!-- HEADER                           -->
+    <!-- ================================ -->
+    <header class="header">
+        <div class="header-left">
+            <span class="header-logo">🗺️</span>
+            <h1 class="header-title">GIS Toolbox</h1>
+        </div>
+        <div class="header-center">
+            <button class="btn btn-primary btn-sm" id="btn-import">
+                <span class="btn-icon-text">📂</span> Import
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btn-photo-mapper">
+                <span class="btn-icon-text">📷</span> Photos
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btn-arcgis">
+                <span class="btn-icon-text">🌐</span> ArcGIS
+            </button>
+            <button class="btn btn-secondary btn-sm" id="btn-coordinates">
+                <span class="btn-icon-text">📍</span> Coords
+            </button>
+            <div class="header-sep"></div>
+            <button class="btn btn-ghost btn-sm" id="btn-undo" disabled title="Undo">↩</button>
+            <button class="btn btn-ghost btn-sm" id="btn-redo" disabled title="Redo">↪</button>
+            <button class="btn btn-secondary btn-sm hidden" id="btn-merge">Merge Layers</button>
+            <button class="btn btn-primary btn-sm hidden" id="btn-export">
+                <span class="btn-icon-text">💾</span> Export
+            </button>
+        </div>
+        <div class="header-right">
+            <select id="basemap-select" class="btn-sm" title="Basemap">
+                <option value="osm">OpenStreetMap</option>
+                <option value="positron">CartoDB Positron</option>
+                <option value="dark">CartoDB Dark</option>
+                <option value="topo">OpenTopoMap</option>
+                <option value="none">No Basemap</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="btn-logs" title="Logs">📋</button>
+        </div>
+    </header>
+
+    <!-- ================================ -->
+    <!-- MAIN 3-PANEL LAYOUT (Desktop)    -->
+    <!-- ================================ -->
+    <div class="app-layout">
+
+        <!-- LEFT PANEL -->
+        <aside class="panel panel-left">
+            <div class="panel-header">
+                <span>Layers & Fields</span>
+                <button class="btn-icon" id="toggle-left-panel" title="Collapse">◀</button>
+            </div>
+            <div class="panel-body">
+                <!-- Layer List -->
+                <div class="panel-section">
+                    <div class="panel-section-header" onclick="toggleSection(this)">
+                        Layers <span class="arrow">▼</span>
+                    </div>
+                    <div class="panel-section-body" id="layer-list">
+                        <div class="empty-state">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;margin:0 auto 12px;">
+                                <path d="M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <p>No layers loaded.<br>Import a file or use a tool to get started.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Field List -->
+                <div class="panel-section">
+                    <div class="panel-section-header" onclick="toggleSection(this)">
+                        Fields <span class="arrow">▼</span>
+                    </div>
+                    <div class="panel-section-body" id="field-list">
+                        <div class="text-muted text-sm p-8">Select a layer to view fields</div>
+                    </div>
+                </div>
+
+                <!-- Data Prep Tools -->
+                <div id="dataprep-tools"></div>
+            </div>
+        </aside>
+
+        <!-- CENTER PANEL — MAP -->
+        <main class="panel-center">
+            <div id="map-container">
+                <div class="map-overlay" id="map-drop-overlay">
+                    <div>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;">
+                            <path d="M12 16v-4m0-4h.01M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7l3-7z"/>
+                        </svg>
+                        <p style="margin-top:12px; font-size:18px; font-weight:600;">Drop files here to import</p>
+                        <p class="text-sm text-muted">GeoJSON, CSV, Excel, KML, KMZ, Shapefile (ZIP)</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- RIGHT PANEL -->
+        <aside class="panel panel-right">
+            <div class="panel-header">
+                <span>Output & Export</span>
+                <button class="btn-icon" id="toggle-right-panel" title="Collapse">▶</button>
+            </div>
+            <div class="panel-body" id="output-panel-content">
+                <div class="empty-state">
+                    <p>No layer selected</p>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- ================================ -->
+    <!-- LOGS PANEL (slides up)           -->
+    <!-- ================================ -->
+    <div id="logs-panel" class="logs-panel hidden">
+        <div class="logs-header">
+            <h3>Logs</h3>
+            <div class="logs-toolbar">
+                <input type="search" id="logs-search" placeholder="Search logs..." class="input-sm">
+                <select id="logs-level" class="input-sm">
+                    <option value="">All Levels</option>
+                    <option value="ERROR">Errors</option>
+                    <option value="WARN">Warnings</option>
+                    <option value="INFO">Info</option>
+                    <option value="DEBUG">Debug</option>
+                </select>
+                <button class="btn btn-ghost btn-sm" id="logs-copy" title="Copy logs">📋</button>
+                <button class="btn btn-ghost btn-sm" id="logs-download" title="Download logs">💾</button>
+                <button class="btn btn-ghost btn-sm" id="logs-clear" title="Clear">🗑️</button>
+                <button class="btn btn-ghost btn-sm" onclick="document.getElementById('logs-panel').classList.add('hidden')">✕</button>
+            </div>
+        </div>
+        <div class="logs-body" id="logs-body"></div>
+    </div>
+
+    <!-- ================================ -->
+    <!-- MOBILE BOTTOM NAV                -->
+    <!-- ================================ -->
+    <nav class="mobile-nav">
+        <div class="mobile-nav-item active" data-tab="data">
+            <span>📊</span>
+            <span>Data</span>
+        </div>
+        <div class="mobile-nav-item" data-tab="prep">
+            <span>🔧</span>
+            <span>Prep</span>
+        </div>
+        <div class="mobile-nav-item" data-tab="tools">
+            <span>⚙️</span>
+            <span>Tools</span>
+        </div>
+        <div class="mobile-nav-item" data-tab="export">
+            <span>💾</span>
+            <span>Export</span>
+        </div>
+    </nav>
+
+    <!-- Mobile content panels (hidden on desktop) -->
+    <div class="mobile-content hidden" id="mobile-data"></div>
+    <div class="mobile-content hidden" id="mobile-prep"></div>
+    <div class="mobile-content hidden" id="mobile-tools"></div>
+    <div class="mobile-content hidden" id="mobile-export"></div>
+
+    <!-- ================================ -->
+    <!-- LIBRARY SCRIPTS (CDN, NO API KEYS) -->
+    <!-- ================================ -->
+    <!-- Leaflet -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin="anonymous"></script>
+
+    <!-- PapaParse (CSV) -->
+    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <!-- SheetJS / XLSX (Excel) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+    <!-- JSZip (KMZ, Shapefile ZIP) -->
+    <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+
+    <!-- toGeoJSON (KML) -->
+    <script src="https://unpkg.com/@mapbox/togeojson@0.16.2/togeojson.js"></script>
+
+    <!-- Turf.js (GIS analysis) -->
+    <script src="https://unpkg.com/@turf/turf@7.1.0/turf.min.js"></script>
+
+    <!-- shpjs (Shapefile) -->
+    <script src="https://unpkg.com/shpjs@4.0.4/dist/shp.js"></script>
+
+    <!-- exifr (Photo EXIF) -->
+    <script src="https://unpkg.com/exifr@7.1.3/dist/full.umd.js"></script>
+
+    <!-- App Entry Point -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

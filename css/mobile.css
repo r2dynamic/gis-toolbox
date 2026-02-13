@@ -1,0 +1,122 @@
+/* ========================================
+   Mobile Styles — < 768px
+   ======================================== */
+
+@media (max-width: 767px) {
+    :root {
+        --header-h: 44px;
+        --bottom-nav-h: 56px;
+    }
+
+    .header {
+        height: var(--header-h);
+        padding: 0 8px;
+    }
+    .header .header-title { font-size: 14px; }
+    .header-center .btn span.btn-icon-text + span { display: none; }
+
+    /* Hide desktop panels */
+    .app-layout {
+        flex-direction: column;
+        height: calc(100vh - var(--header-h) - var(--bottom-nav-h));
+    }
+    .panel-left, .panel-right, .resize-handle { display: none !important; }
+    .panel-center { flex: 1; }
+
+    /* Bottom Navigation */
+    .mobile-nav {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: var(--bottom-nav-h);
+        background: var(--bg-panel);
+        border-top: 1px solid var(--border);
+        z-index: 900;
+    }
+    .mobile-nav-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        cursor: pointer;
+        color: var(--text-muted);
+        font-size: 10px;
+        font-weight: 500;
+        padding: 4px;
+        -webkit-tap-highlight-color: transparent;
+        transition: color var(--transition);
+        border: none;
+        background: none;
+    }
+    .mobile-nav-item:active { background: var(--bg); }
+    .mobile-nav-item.active { color: var(--primary); }
+    .mobile-nav-item svg { width: 22px; height: 22px; }
+
+    /* Mobile content area */
+    .mobile-content {
+        position: fixed;
+        top: var(--header-h);
+        left: 0;
+        right: 0;
+        bottom: var(--bottom-nav-h);
+        overflow-y: auto;
+        background: var(--bg);
+        z-index: 800;
+        padding: 8px;
+    }
+    .mobile-content.hidden { display: none; }
+
+    /* Modal adjustments for mobile */
+    .modal {
+        min-width: unset;
+        width: 95vw;
+        max-height: 85vh;
+    }
+    .modal-header { padding: 10px 12px; font-size: 14px; }
+    .modal-body { padding: 12px; }
+
+    /* Bottom sheet takes precedence on mobile */
+    .bottom-sheet { max-height: 80vh; }
+
+    /* Toast on mobile */
+    .toast-container {
+        top: 48px;
+        right: 8px;
+        left: 8px;
+    }
+    .toast { max-width: unset; }
+
+    /* Table adjustments */
+    .data-table-wrap { max-height: 250px; }
+
+    /* Photo grid */
+    .photo-grid {
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        gap: 6px;
+    }
+
+    /* Wizard steps compact */
+    .wizard-steps { flex-wrap: wrap; }
+    .wizard-step span.step-text { display: none; }
+
+    /* Large tap targets */
+    .btn { min-height: 44px; padding: 10px 16px; }
+    .btn-sm { min-height: 36px; }
+    .checkbox-row { min-height: 44px; padding: 8px 0; }
+    .field-item { min-height: 44px; padding: 8px; }
+    .layer-item { min-height: 48px; padding: 10px; }
+    .tab { padding: 12px 16px; }
+
+    /* Logs panel mobile */
+    .logs-panel { height: 200px; bottom: var(--bottom-nav-h); }
+}
+
+/* Desktop: hide mobile nav */
+@media (min-width: 768px) {
+    .mobile-nav { display: none !important; }
+    .mobile-content { display: none !important; }
+}
