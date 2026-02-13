@@ -215,16 +215,26 @@ class MapManager {
 
     showPopup(feature, layer) {
         const props = feature.properties || {};
+        let imgHtml = '';
+
+        // Show photo thumbnail if available
+        if (props._thumbnailUrl) {
+            imgHtml = `<div style="margin-bottom:6px;text-align:center;">
+                <img src="${props._thumbnailUrl}" style="max-width:280px;max-height:200px;border-radius:4px;" />
+            </div>`;
+        }
+
         const rows = Object.entries(props)
-            .filter(([k, v]) => v != null)
+            .filter(([k, v]) => v != null && !k.startsWith('_'))
             .map(([k, v]) => {
                 let val = v;
                 if (typeof v === 'object') val = JSON.stringify(v);
                 if (typeof val === 'string' && val.length > 100) val = val.slice(0, 100) + '…';
                 return `<tr><th>${k}</th><td>${val}</td></tr>`;
             }).join('');
-        const html = rows ? `<table>${rows}</table>` : '<em>No attributes</em>';
-        layer.bindPopup(html, { maxWidth: 350, maxHeight: 250 }).openPopup();
+        const tableHtml = rows ? `<table>${rows}</table>` : '<em>No attributes</em>';
+        const html = imgHtml + tableHtml;
+        layer.bindPopup(html, { maxWidth: 350, maxHeight: 400 }).openPopup();
     }
 
     fitToAll() {

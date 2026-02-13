@@ -123,13 +123,31 @@ export class PhotoMapper {
         // Use exifr library if available
         if (typeof exifr !== 'undefined') {
             try {
+                // First pass: get GPS coordinates (let exifr compute lat/lon with hemisphere)
+                const gps = await exifr.gps(file).catch(() => null);
+
+                // Second pass: get other EXIF tags
                 const data = await exifr.parse(file, {
-                    gps: true,
                     tiff: true,
                     exif: true,
-                    pick: ['GPSLatitude', 'GPSLongitude', 'GPSAltitude', 'GPSImgDirection',
+                    gps: true,
+                    pick: ['GPSAltitude', 'GPSImgDirection',
                         'DateTimeOriginal', 'CreateDate', 'Make', 'Model']
+                }).catch(() => ({})) || {};
+
+                // Merge: use exifr.gps() result for reliable signed lat/lon
+                if (gps?.latitude != null && gps?.longitude != null) {
+                    data.latitude = gps.latitude;
+                    data.longitude = gps.longitude;
+                }
+
+                logger.info('PhotoMapper', 'EXIF extracted', {
+                    file: file.name,
+                    lat: data.latitude,
+                    lon: data.longitude,
+                    hasGPS: data.latitude != null
                 });
+
                 return data;
             } catch (e) {
                 logger.warn('PhotoMapper', 'exifr parse failed', { file: file.name, error: e.message });
@@ -197,7 +215,8 @@ export class PhotoMapper {
                 longitude: p.gps.lon,
                 altitude: p.altitude || '',
                 heading: p.heading || '',
-                fileSize: p.size
+                fileSize: p.size,
+                _thumbnailUrl: p.thumbnailUrl || ''
             }
         }));
 
