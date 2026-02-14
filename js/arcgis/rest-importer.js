@@ -311,6 +311,135 @@ export class ArcGISRestImporter {
     }
 
     getMetadata() { return this.metadata; }
+
+    /**
+     * Browse a REST services directory and return all Feature/Map Server layers
+     * Accepts URLs like:
+     *   https://services.arcgis.com/orgId/arcgis/rest/services/
+     *   https://server.example.com/server/rest/services/
+     *   https://server.example.com/arcgis/rest/services/FolderName
+     */
+    async browseServices(baseUrl, onProgress) {
+        let url = baseUrl.trim().replace(/\/+$/, '').split('?')[0];
+
+        // Ensure it ends with /rest/services or contains it
+        if (!url.toLowerCase().includes('/rest/services') && !url.toLowerCase().includes('/rest')) {
+            url += '/rest/services';
+        }
+
+        logger.info('ArcGIS', 'Browsing services directory', { url });
+        if (onProgress) onProgress('Fetching services directory...');
+
+        const catalog = await this._fetchJson(url);
+        if (!catalog || catalog.error) {
+            throw new AppError(
+                catalog?.error?.message || 'Could not read services directory',
+                ErrorCategory.PARSE_FAILED,
+                { url }
+            );
+        }
+
+        const results = [];
+
+        // Process services at this level
+        const services = catalog.services || [];
+        const folders = catalog.folders || [];
+        const total = services.length + folders.length;
+        let done = 0;
+
+        for (const svc of services) {
+            done++;
+            if (onProgress) onProgress(`Scanning service ${done}/${total}: ${svc.name}...`);
+            const svcType = svc.type || '';
+            if (svcType === 'FeatureServer' || svcType === 'MapServer') {
+                const svcUrl = `${url}/${svc.name}/${svcType}`;
+                try {
+                    const layers = await this._fetchServiceLayers(svcUrl, svc.name, svcType);
+                    results.push(...layers);
+                } catch (_) {
+                    // Skip inaccessible services
+                    logger.warn('ArcGIS', `Skipped inaccessible service: ${svc.name}`);
+                }
+            }
+        }
+
+        // Recurse into folders
+        for (const folder of folders) {
+            done++;
+            if (onProgress) onProgress(`Scanning folder ${done}/${total}: ${folder}...`);
+            try {
+                const folderUrl = `${url}/${folder}`;
+                const folderData = await this._fetchJson(folderUrl);
+                if (folderData?.services) {
+                    for (const svc of folderData.services) {
+                        const svcType = svc.type || '';
+                        if (svcType === 'FeatureServer' || svcType === 'MapServer') {
+                            const svcUrl = `${url}/${svc.name}/${svcType}`;
+                            try {
+                                const layers = await this._fetchServiceLayers(svcUrl, svc.name, svcType);
+                                results.push(...layers);
+                            } catch (_) {
+                                logger.warn('ArcGIS', `Skipped inaccessible service: ${svc.name}`);
+                            }
+                        }
+                    }
+                }
+            } catch (_) {
+                logger.warn('ArcGIS', `Skipped inaccessible folder: ${folder}`);
+            }
+        }
+
+        logger.info('ArcGIS', `Found ${results.length} layers`, { url });
+        return results;
+    }
+
+    async _fetchServiceLayers(svcUrl, svcName, svcType) {
+        const data = await this._fetchJson(svcUrl);
+        if (!data || data.error) return [];
+
+        const layers = data.layers || [];
+        const shortName = svcName.includes('/') ? svcName.split('/').pop() : svcName;
+
+        // Extract service-level metadata
+        const svcDescription = data.serviceDescription || data.description || '';
+        const svcCopyright = data.copyrightText || '';
+        const svcAuthor = data.documentInfo?.Author || '';
+        const svcVersion = data.currentVersion || null;
+        const svcCapabilities = data.capabilities || '';
+
+        // Last edit date from editingInfo
+        let svcLastEdit = null;
+        if (data.editingInfo?.lastEditDate) {
+            svcLastEdit = data.editingInfo.lastEditDate;
+        } else if (data.editingInfo?.dataLastEditDate) {
+            svcLastEdit = data.editingInfo.dataLastEditDate;
+        }
+
+        return layers.map(l => ({
+            name: l.name,
+            serviceName: shortName,
+            serviceType: svcType,
+            layerId: l.id,
+            geometryType: l.geometryType ? this.mapGeometryType(l.geometryType) : (l.type === 'Feature Layer' ? 'Unknown' : 'Table'),
+            url: `${svcUrl}/${l.id}`,
+            minScale: l.minScale || null,
+            maxScale: l.maxScale || null,
+            // Service-level metadata
+            description: svcDescription,
+            copyright: svcCopyright,
+            author: svcAuthor,
+            serverVersion: svcVersion,
+            capabilities: svcCapabilities,
+            lastEditDate: svcLastEdit
+        }));
+    }
+
+    async _fetchJson(url) {
+        const sep = url.includes('?') ? '&' : '?';
+        const resp = await fetch(`${url}${sep}f=json`, { signal: AbortSignal.timeout(15000) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+    }
 }
 
 export const arcgisImporter = new ArcGISRestImporter();
