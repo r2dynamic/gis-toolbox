@@ -107,6 +107,8 @@ class MapManager {
 
         // Right-click on empty map area
         this.map.on('contextmenu', (e) => {
+            e.originalEvent.preventDefault();
+            e.originalEvent.stopPropagation();
             bus.emit('map:contextmenu', {
                 latlng: e.latlng,
                 originalEvent: e.originalEvent,
@@ -197,8 +199,9 @@ class MapManager {
                 });
             },
             onEachFeature: (feature, layer) => {
-                // Store mapping from leaflet layer id to dataset + feature index
-                const featureIndex = features.indexOf(feature);
+                // Store the index into the ORIGINAL dataset.geojson.features array
+                // (not the filtered array) so editors and popups reference the right feature
+                const featureIndex = dataset.geojson.features.indexOf(feature);
                 layer._featureIndex = featureIndex;
                 layer._datasetId = dataset.id;
 
@@ -208,12 +211,19 @@ class MapManager {
                         // Selection mode: click toggles selection, shift adds
                         this._handleSelectionClick(dataset.id, featureIndex, e.originalEvent?.shiftKey, color);
                     } else {
-                        // Gather all features near this click across all visible layers
                         const clickLatLng = e.latlng;
-                        const nearby = this._findFeaturesNearClick(clickLatLng);
-                        if (nearby.length > 0) {
+                        const nearby = this._findFeaturesNearClick(clickLatLng, dataset.id, featureIndex);
+                        if (nearby.length > 1) {
+                            // Multiple stacked features — show cycling popup
                             this.highlightFeature(layer, color);
                             this._showMultiPopup(nearby, clickLatLng);
+                        } else {
+                            // Single feature — show simple popup (no cycling UI)
+                            this.highlightFeature(layer, color);
+                            this._popupHits = nearby;
+                            this._popupIndex = 0;
+                            this._popupLatLng = clickLatLng;
+                            this._renderCyclePopup();
                         }
                     }
                 });
@@ -221,6 +231,8 @@ class MapManager {
                 layer.on('contextmenu', (e) => {
                     L.DomEvent.stopPropagation(e);
                     L.DomEvent.preventDefault(e);
+                    e.originalEvent.preventDefault();
+                    e.originalEvent.stopPropagation();
                     const latlng = e.latlng;
                     bus.emit('map:contextmenu', {
                         latlng,
@@ -329,64 +341,83 @@ class MapManager {
     }
 
     /**
-     * Find all features near a click point across all visible layers.
-     * Returns array of { feature, layer, layerName, layerId, color }.
-     * Ordered: top layer in state first.
+     * Find all features that truly overlap the click point across all visible layers.
+     * Uses proper geometric containment (turf.js for polygons, actual line proximity,
+     * tight pixel tolerance for points). This mimics ArcGIS-style hit detection:
+     * only features that are genuinely stacked/overlapping are returned.
+     *
+     * @param {L.LatLng} latlng - The click location
+     * @param {string} [clickedLayerId] - The layer whose feature was actually clicked (gets priority)
+     * @param {number} [clickedFeatureIndex] - The feature index that was actually clicked
+     * @returns {Array} Hits ordered: clicked feature first, then top-to-bottom
      */
-    _findFeaturesNearClick(latlng) {
+    _findFeaturesNearClick(latlng, clickedLayerId, clickedFeatureIndex) {
         const clickPt = this.map.latLngToContainerPoint(latlng);
-        const tolerance = 12; // px
+        const clickGeoJSON = turf.point([latlng.lng, latlng.lat]);
         const results = [];
+        const pointTolerance = 4; // px beyond the marker radius
 
-        // Get layer order from state (last = top = first in popup)
-        const orderedIds = [];
-        try {
-            // Access state for ordering
-            const layers = bus._listeners?.['layers:changed']
-                ? null : null; // can't access state directly here
-        } catch (_) {}
-
-        // Iterate each data layer
         for (const [layerId, geojsonLayer] of this.dataLayers) {
             if (!this.map.hasLayer(geojsonLayer)) continue; // skip hidden
-            const color = geojsonLayer.options?.style?.color || '#2563eb';
+
+            const color = typeof geojsonLayer.options?.style === 'function'
+                ? '#2563eb'
+                : (geojsonLayer.options?.style?.color || '#2563eb');
 
             geojsonLayer.eachLayer((sub) => {
                 if (sub._featureIndex === undefined) return;
+                const geom = sub.feature?.geometry;
+                if (!geom) return;
+
                 let hit = false;
+                const gType = geom.type;
+
                 if (sub.getLatLng) {
+                    // Point / CircleMarker — tight pixel-distance check
                     const pt = this.map.latLngToContainerPoint(sub.getLatLng());
-                    hit = clickPt.distanceTo(pt) <= tolerance + (sub.getRadius?.() || 6);
-                } else if (sub.getBounds) {
-                    // For lines/polygons, check if click is inside bounds first
-                    const bounds = sub.getBounds();
-                    if (bounds.contains(latlng)) {
-                        hit = true;
-                    } else {
-                        // Check if near the border
-                        const ne = this.map.latLngToContainerPoint(bounds.getNorthEast());
-                        const sw = this.map.latLngToContainerPoint(bounds.getSouthWest());
-                        const expanded = L.bounds(
-                            L.point(sw.x - tolerance, ne.y - tolerance),
-                            L.point(ne.x + tolerance, sw.y + tolerance)
-                        );
-                        hit = expanded.contains(clickPt);
-                    }
+                    const radius = sub.getRadius?.() || 6;
+                    hit = clickPt.distanceTo(pt) <= radius + pointTolerance;
+                } else if (gType === 'Polygon' || gType === 'MultiPolygon') {
+                    // Use turf for true point-in-polygon test
+                    try { hit = turf.booleanPointInPolygon(clickGeoJSON, geom); } catch (_) { hit = false; }
+                } else if (gType === 'LineString' || gType === 'MultiLineString') {
+                    // Check pixel distance to the actual line path
+                    try {
+                        const nearest = turf.nearestPointOnLine(sub.feature, clickGeoJSON, { units: 'degrees' });
+                        if (nearest) {
+                            const nearestLatLng = L.latLng(nearest.geometry.coordinates[1], nearest.geometry.coordinates[0]);
+                            const nearestPx = this.map.latLngToContainerPoint(nearestLatLng);
+                            const lineWeight = sub.options?.weight || 2;
+                            hit = clickPt.distanceTo(nearestPx) <= lineWeight + 6;
+                        }
+                    } catch (_) { hit = false; }
                 }
+
                 if (hit) {
+                    const featureColor = typeof geojsonLayer.options?.style === 'function'
+                        ? (geojsonLayer.options.style(sub.feature)?.color || '#2563eb')
+                        : color;
                     results.push({
                         feature: sub.feature,
                         featureIndex: sub._featureIndex,
                         leafletLayer: sub,
                         layerId,
                         layerName: this._layerNames.get(layerId) || layerId,
-                        layerColor: typeof geojsonLayer.options?.style === 'function'
-                            ? (geojsonLayer.options.style(sub.feature)?.color || '#2563eb')
-                            : (geojsonLayer.options?.style?.color || '#2563eb')
+                        layerColor: featureColor
                     });
                 }
             });
         }
+
+        // Ensure the actually-clicked feature is first in results
+        if (clickedLayerId !== undefined && clickedFeatureIndex !== undefined) {
+            const clickedIdx = results.findIndex(r => r.layerId === clickedLayerId && r.featureIndex === clickedFeatureIndex);
+            if (clickedIdx > 0) {
+                const [clicked] = results.splice(clickedIdx, 1);
+                results.unshift(clicked);
+            }
+        }
+
         return results;
     }
 
@@ -432,15 +463,23 @@ class MapManager {
         // Highlight the current feature
         this.highlightFeature(hit.leafletLayer, hit.layerColor);
 
-        L.popup({ maxWidth: 350, maxHeight: 400, closeOnClick: false })
+        // Flag that the next popupclose is from cycling, not user dismissal
+        this._cyclingPopup = true;
+        const popup = L.popup({ maxWidth: 350, maxHeight: 400, closeOnClick: false })
             .setLatLng(this._popupLatLng)
             .setContent(html)
             .openOn(this.map);
+        this._cyclingPopup = false;
 
-        this.map.once('popupclose', () => {
-            this.clearHighlight();
-            this._popupHits = null;
-        });
+        // Only clear hits when the user actually closes the popup (not during cycling)
+        this.map.off('popupclose', this._onCyclePopupClose);
+        this._onCyclePopupClose = () => {
+            if (!this._cyclingPopup) {
+                this.clearHighlight();
+                this._popupHits = null;
+            }
+        };
+        this.map.once('popupclose', this._onCyclePopupClose);
     }
 
     /**

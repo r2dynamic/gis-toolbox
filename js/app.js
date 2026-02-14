@@ -295,11 +295,6 @@ function setupEventListeners() {
 
     // Right-click context menu
     bus.on('map:contextmenu', showMapContextMenu);
-    document.addEventListener('click', dismissContextMenu);
-    document.addEventListener('contextmenu', (e) => {
-        // Only dismiss if clicking outside map
-        if (!e.target.closest('.map-context-menu')) dismissContextMenu();
-    });
 
     // Basemap selector
     document.getElementById('basemap-select')?.addEventListener('change', (e) => {
@@ -637,15 +632,41 @@ function renderMobileDataPanel() {
             <button class="btn btn-primary btn-sm" id="btn-import-mobile">📂 Import Files</button></div>`;
     } else {
         html += `<div style="display:flex;flex-direction:column;gap:2px;">`;
-        html += layers.map(l => `
-            <div class="layer-item ${l.id === layer?.id ? 'active' : ''}" onclick="window.app.setActiveLayer('${l.id}')">
-                <span style="font-size:14px">${l.type === 'spatial' ? '🗺️' : '📊'}</span>
-                <div class="layer-info">
-                    <div class="layer-name">${l.name}</div>
-                    <div class="layer-meta">${l.schema?.featureCount || 0} items · ${l.schema?.fields?.length || 0} fields</div>
-                </div>
-            </div>
-        `).join('');
+        html += layers.map((l, idx) => {
+            const isActive = l.id === layer?.id;
+            const icon = l.type === 'spatial' ? '🗺️' : '📊';
+            const count = l.type === 'spatial'
+                ? `${l.geojson?.features?.length || 0} features`
+                : `${l.rows?.length || 0} rows`;
+            const geomBadge = l.schema?.geometryType
+                ? `<span class="badge badge-info">${l.schema.geometryType}</span>` : '';
+            const filterBadge = l._activeFilter
+                ? `<span class="layer-filter-badge" title="Filter active" onclick="event.stopPropagation(); window.app.openFilterBuilder('${l.id}')">FILTERED</span>`
+                : '';
+            return `
+                <div class="layer-item ${isActive ? 'active' : ''}" data-id="${l.id}" onclick="window.app.setActiveLayer('${l.id}')">
+                    <span class="layer-icon">${icon}</span>
+                    <div class="layer-name-row">
+                        <div class="layer-name">${l.name}</div>
+                        ${filterBadge}
+                        <div class="layer-order-btns">
+                            <button title="Move up" ${idx === 0 ? 'disabled' : ''} onclick="event.stopPropagation(); window.app.moveLayerUp('${l.id}')">▲</button>
+                            <button title="Move down" ${idx === layers.length - 1 ? 'disabled' : ''} onclick="event.stopPropagation(); window.app.moveLayerDown('${l.id}')">▼</button>
+                        </div>
+                    </div>
+                    <div class="layer-bottom-row">
+                        <div class="layer-meta">${count} · ${l.schema?.fields?.length || 0} fields ${geomBadge}</div>
+                        <div class="layer-actions">
+                            <button class="btn-icon" title="Rename" onclick="event.stopPropagation(); window.app.renameLayer('${l.id}')">✏️</button>
+                            <button class="btn-icon" title="Toggle visibility" onclick="event.stopPropagation(); window.app.toggleVisibility('${l.id}')">
+                                ${l.visible !== false ? '👁️' : '👁️‍🗨️'}
+                            </button>
+                            <button class="btn-icon" title="Zoom to layer" onclick="event.stopPropagation(); window.app.zoomToLayer('${l.id}')">🔍</button>
+                            <button class="btn-icon" title="Remove" onclick="event.stopPropagation(); window.app.removeLayer('${l.id}')">🗑️</button>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
         html += `</div>`;
     }
 
@@ -3772,8 +3793,11 @@ function showToolInfo() {
 // ============================
 // Right-click context menu
 // ============================
+let _ctxDismissAC = null; // AbortController for context menu dismiss listeners
+
 function dismissContextMenu() {
     document.querySelector('.map-context-menu')?.remove();
+    if (_ctxDismissAC) { _ctxDismissAC.abort(); _ctxDismissAC = null; }
 }
 
 function showMapContextMenu({ latlng, originalEvent, layerId, featureIndex, feature }) {
@@ -3795,7 +3819,7 @@ function showMapContextMenu({ latlng, originalEvent, layerId, featureIndex, feat
     // Feature-specific items
     if (feature && layer) {
         items.push({ icon: '📋', label: 'View attributes', action: () => {
-            const nearby = mapManager._findFeaturesNearClick(latlng);
+            const nearby = mapManager._findFeaturesNearClick(latlng, layerId, featureIndex);
             if (nearby.length > 0) mapManager._showMultiPopup(nearby, latlng);
             else mapManager.showPopup(feature, null, latlng);
         }});
@@ -3885,6 +3909,27 @@ function showMapContextMenu({ latlng, originalEvent, layerId, featureIndex, feat
     if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 4;
     menu.style.left = x + 'px';
     menu.style.top = y + 'px';
+
+    // Dismiss listeners — deferred so the originating event doesn't immediately dismiss
+    _ctxDismissAC = new AbortController();
+    const sig = _ctxDismissAC.signal;
+    requestAnimationFrame(() => {
+        if (sig.aborted) return;
+        // Click anywhere outside the menu dismisses it
+        document.addEventListener('pointerdown', (e) => {
+            if (!e.target.closest('.map-context-menu')) dismissContextMenu();
+        }, { signal: sig });
+        // Another right-click outside the menu dismisses it (new one will replace)
+        document.addEventListener('contextmenu', (e) => {
+            if (!e.target.closest('.map-context-menu')) dismissContextMenu();
+        }, { signal: sig });
+        // Escape key dismisses
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') dismissContextMenu();
+        }, { signal: sig });
+        // Scroll / map interaction dismisses
+        document.addEventListener('wheel', () => dismissContextMenu(), { signal: sig, passive: true });
+    });
 }
 
 // ============================
