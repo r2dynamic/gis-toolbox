@@ -337,7 +337,229 @@ class MapManager {
 
     getMap() { return this.map; }
 
+    // ==========================================
+    // Interactive Drawing / Selection System
+    // ==========================================
+
+    /**
+     * Enter "click one point" mode.
+     * Shows a crosshair cursor and returns a promise resolving to [lng, lat]
+     * on click, or null if cancelled (Escape).
+     */
+    startPointPick(prompt = 'Click the map to place a point') {
+        return new Promise((resolve) => {
+            this._cancelInteraction(); // clear any previous mode
+
+            const container = this.map.getContainer();
+            container.style.cursor = 'crosshair';
+
+            // Show instruction banner
+            const banner = this._showInteractionBanner(prompt, () => {
+                cleanup(); resolve(null);
+            });
+
+            // Temp marker
+            let marker = null;
+
+            const onClick = (e) => {
+                cleanup();
+                resolve([e.latlng.lng, e.latlng.lat]);
+            };
+
+            const onKeyDown = (e) => {
+                if (e.key === 'Escape') { cleanup(); resolve(null); }
+            };
+
+            const cleanup = () => {
+                container.style.cursor = '';
+                this.map.off('click', onClick);
+                document.removeEventListener('keydown', onKeyDown);
+                if (marker) this.map.removeLayer(marker);
+                if (banner) banner.remove();
+                this._interactionCleanup = null;
+            };
+
+            this._interactionCleanup = cleanup;
+            this.map.on('click', onClick);
+            document.addEventListener('keydown', onKeyDown);
+        });
+    }
+
+    /**
+     * Enter "click two points" mode.
+     * Returns a promise resolving to [[lng1, lat1], [lng2, lat2]] or null if cancelled.
+     */
+    startTwoPointPick(prompt1 = 'Click the first point', prompt2 = 'Click the second point') {
+        return new Promise((resolve) => {
+            this._cancelInteraction();
+
+            const container = this.map.getContainer();
+            container.style.cursor = 'crosshair';
+
+            const markers = [];
+            let firstPoint = null;
+
+            const banner = this._showInteractionBanner(prompt1, () => {
+                cleanup(); resolve(null);
+            });
+
+            const onKeyDown = (e) => {
+                if (e.key === 'Escape') { cleanup(); resolve(null); }
+            };
+
+            const onClick = (e) => {
+                const coord = [e.latlng.lng, e.latlng.lat];
+
+                // Place a visible marker
+                const m = L.circleMarker(e.latlng, {
+                    radius: 7, fillColor: '#d4a24e', color: '#fff',
+                    weight: 2, fillOpacity: 1
+                }).addTo(this.map);
+                markers.push(m);
+
+                if (!firstPoint) {
+                    firstPoint = coord;
+                    banner.querySelector('.interaction-text').textContent = prompt2;
+                } else {
+                    cleanup();
+                    resolve([firstPoint, coord]);
+                }
+            };
+
+            const cleanup = () => {
+                container.style.cursor = '';
+                this.map.off('click', onClick);
+                document.removeEventListener('keydown', onKeyDown);
+                markers.forEach(m => this.map.removeLayer(m));
+                if (banner) banner.remove();
+                this._interactionCleanup = null;
+            };
+
+            this._interactionCleanup = cleanup;
+            this.map.on('click', onClick);
+            document.addEventListener('keydown', onKeyDown);
+        });
+    }
+
+    /**
+     * Enter "draw rectangle" mode.
+     * User clicks and drags to draw a bounding box.
+     * Returns [west, south, east, north] or null if cancelled.
+     */
+    startRectangleDraw(prompt = 'Click and drag to draw a rectangle') {
+        return new Promise((resolve) => {
+            this._cancelInteraction();
+
+            const container = this.map.getContainer();
+            container.style.cursor = 'crosshair';
+
+            const banner = this._showInteractionBanner(prompt, () => {
+                cleanup(); resolve(null);
+            });
+
+            let startLatLng = null;
+            let rect = null;
+
+            const onMouseDown = (e) => {
+                startLatLng = e.latlng;
+                this.map.dragging.disable();
+            };
+
+            const onMouseMove = (e) => {
+                if (!startLatLng) return;
+                const bounds = L.latLngBounds(startLatLng, e.latlng);
+                if (rect) {
+                    rect.setBounds(bounds);
+                } else {
+                    rect = L.rectangle(bounds, {
+                        color: '#d4a24e', weight: 2, fillOpacity: 0.15,
+                        dashArray: '6,4'
+                    }).addTo(this.map);
+                }
+            };
+
+            const onMouseUp = (e) => {
+                if (!startLatLng) return;
+                this.map.dragging.enable();
+                const bounds = L.latLngBounds(startLatLng, e.latlng);
+                cleanup();
+                resolve([
+                    bounds.getWest(), bounds.getSouth(),
+                    bounds.getEast(), bounds.getNorth()
+                ]);
+            };
+
+            const onKeyDown = (e) => {
+                if (e.key === 'Escape') {
+                    this.map.dragging.enable();
+                    cleanup();
+                    resolve(null);
+                }
+            };
+
+            const cleanup = () => {
+                container.style.cursor = '';
+                this.map.off('mousedown', onMouseDown);
+                this.map.off('mousemove', onMouseMove);
+                this.map.off('mouseup', onMouseUp);
+                document.removeEventListener('keydown', onKeyDown);
+                if (rect) {
+                    // Flash the rectangle briefly then remove
+                    setTimeout(() => { if (rect) this.map.removeLayer(rect); }, 800);
+                }
+                if (banner) banner.remove();
+                this._interactionCleanup = null;
+            };
+
+            this._interactionCleanup = cleanup;
+            this.map.on('mousedown', onMouseDown);
+            this.map.on('mousemove', onMouseMove);
+            this.map.on('mouseup', onMouseUp);
+            document.addEventListener('keydown', onKeyDown);
+        });
+    }
+
+    /**
+     * Show a temporary result on the map (marker, line, polygon)
+     * Auto-removes after duration ms. Returns the layer for manual removal.
+     */
+    showTempFeature(geojson, duration = 10000) {
+        const layer = L.geoJSON(geojson, {
+            style: { color: '#d4a24e', weight: 3, fillOpacity: 0.25, fillColor: '#d4a24e' },
+            pointToLayer: (f, latlng) => L.circleMarker(latlng, {
+                radius: 8, fillColor: '#d4a24e', color: '#fff', weight: 2, fillOpacity: 0.9
+            })
+        }).addTo(this.map);
+        if (duration > 0) {
+            setTimeout(() => { try { this.map.removeLayer(layer); } catch (_) {} }, duration);
+        }
+        return layer;
+    }
+
+    /** Internal: cancel any ongoing interaction */
+    _cancelInteraction() {
+        if (this._interactionCleanup) {
+            this._interactionCleanup();
+            this._interactionCleanup = null;
+        }
+    }
+
+    /** Internal: show banner at top of map */
+    _showInteractionBanner(text, onCancel) {
+        const banner = document.createElement('div');
+        banner.className = 'map-interaction-banner';
+        banner.innerHTML = `
+            <span class="interaction-text">${text}</span>
+            <button class="interaction-cancel">✕ Cancel</button>
+            <span style="font-size:11px;opacity:0.6;margin-left:8px;">(Esc to cancel)</span>
+        `;
+        banner.querySelector('.interaction-cancel').onclick = onCancel;
+        this.map.getContainer().appendChild(banner);
+        return banner;
+    }
+
     destroy() {
+        this._cancelInteraction();
         if (this.map) {
             this.map.remove();
             this.map = null;

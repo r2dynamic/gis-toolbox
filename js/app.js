@@ -9,7 +9,7 @@ import {
     getState, getLayers, getActiveLayer, addLayer, removeLayer,
     setActiveLayer, toggleLayerVisibility, setUIState, toggleAGOLCompat
 } from './core/state.js';
-import { mergeDatasets, getSelectedFields, tableToSpatial } from './core/data-model.js';
+import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset } from './core/data-model.js';
 import { importFile, importFiles } from './import/importer.js';
 import { getAvailableFormats, exportDataset } from './export/exporter.js';
 import mapManager from './map/map-manager.js';
@@ -493,10 +493,46 @@ function renderDataPrepTools() {
                 GIS Tools <span class="arrow">▼</span>
             </div>
             <div class="panel-section-body">
+
+                <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Measurement</div>
+                <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openDistanceTool()">📏 Distance</button><span class="geo-tip">Measure the straight-line distance between any two points you click on the map.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openBearingTool()">🧭 Bearing</button><span class="geo-tip">Find the compass direction (in degrees) from one point to another on the map.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openDestinationTool()">📌 Destination</button><span class="geo-tip">Given a start point, distance, and compass direction, find where you'd end up.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openAlongTool()">📍 Along</button><span class="geo-tip">Find a point at a specific distance along a line — like finding the 5-mile mark on a road.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openPointToLineDistanceTool()">↔ Pt→Line</button><span class="geo-tip">Measure how far a point is from the nearest spot on a line (shortest perpendicular distance).</span></span>
+                </div>
+
+                <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Transformation</div>
+                <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openBuffer()">⭕ Buffer</button><span class="geo-tip">Draw a zone around features at a set distance — like showing "everything within 1 mile of a road."</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openBboxClip()">✂️ BBox Clip</button><span class="geo-tip">Draw a rectangle on the map and cut away everything outside it.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openClip()">🔲 Clip Extent</button><span class="geo-tip">Cut features to the current visible map area.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openSimplify()">〰️ Simplify</button><span class="geo-tip">Reduce detail in shapes by removing extra points — makes files smaller and rendering faster.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openBezierSpline()">🌊 Spline</button><span class="geo-tip">Smooth jagged lines into gentle, flowing curves (bezier splines).</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openPolygonSmooth()">🔵 Smooth</button><span class="geo-tip">Round off rough polygon edges by averaging corner positions — makes shapes look more natural.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openLineOffset()">↔ Offset</button><span class="geo-tip">Create a parallel copy of a line shifted left or right by a set distance.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openSector()">🥧 Sector</button><span class="geo-tip">Create a pie-slice shaped area from a center point — useful for coverage areas or viewsheds.</span></span>
+                </div>
+
+                <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Line Operations</div>
+                <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openLineSliceAlong()">✂ Slice Along</button><span class="geo-tip">Cut out a section of a line using start and end distances — like "give me the road from mile 2 to mile 5."</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openLineSlice()">✂ Slice Pts</button><span class="geo-tip">Click two points on the map to cut out the section of line between them.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openLineIntersect()">✖ Intersect</button><span class="geo-tip">Find all points where two sets of lines cross each other.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openKinks()">⚠ Kinks</button><span class="geo-tip">Find self-intersections — spots where a line or polygon edge crosses over itself (geometry errors).</span></span>
+                </div>
+
+                <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Combine & Analyze</div>
                 <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                    <button class="btn btn-sm btn-secondary" onclick="window.app.openBuffer()">Buffer</button>
-                    <button class="btn btn-sm btn-secondary" onclick="window.app.openSimplify()">Simplify</button>
-                    <button class="btn btn-sm btn-secondary" onclick="window.app.openClip()">Clip to Extent</button>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openCombine()">🔗 Combine</button><span class="geo-tip">Merge all features of the same type into one multi-feature (multiple Points → one MultiPoint).</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openUnion()">🔶 Union</button><span class="geo-tip">Merge all polygons into a single shape. Overlapping areas are dissolved together.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openDissolve()">🫧 Dissolve</button><span class="geo-tip">Merge polygons that share the same attribute value into single shapes — like combining all counties in the same state.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openPointsWithinPolygon()">📍🔷 Pts in Poly</button><span class="geo-tip">Find which points fall inside which polygons — like counting how many stores are in each district.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openNearestPoint()">🎯 Nearest Pt</button><span class="geo-tip">Click the map to find the closest feature in a point layer to that location.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openNearestPointOnLine()">📍→ Snap</button><span class="geo-tip">Click near a line to find the closest point directly on that line (snaps to it).</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openNearestPointToLine()">📍↔ Pt to Ln</button><span class="geo-tip">Find which point feature in a layer is closest to a given line.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openNearestNeighborAnalysis()">📊 NN Analysis</button><span class="geo-tip">Statistically test whether points are clustered together, spread apart, or randomly distributed.</span></span>
                 </div>
             </div>
         </div>`;
@@ -614,9 +650,19 @@ function renderMobileToolsPanel() {
         <h3>GIS Tools</h3>
         <div style="display:flex;flex-wrap:wrap;gap:4px;">
             ${layers.length >= 2 ? '<button class="btn btn-primary btn-sm" onclick="window.app.mergeLayers()">🔗 Merge Layers</button>' : ''}
-            <button class="btn btn-secondary btn-sm" onclick="window.app.openBuffer()">Buffer</button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.openSimplify()">Simplify</button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.openClip()">Clip to Extent</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openDistanceTool()">📏 Distance</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openBearingTool()">🧭 Bearing</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openBuffer()">⭕ Buffer</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openBboxClip()">✂️ BBox Clip</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openClip()">🔲 Clip Extent</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openSimplify()">〰️ Simplify</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openBezierSpline()">🌊 Spline</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openPolygonSmooth()">🔵 Smooth</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openUnion()">🔶 Union</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openDissolve()">🫧 Dissolve</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openCombine()">🔗 Combine</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openKinks()">⚠ Kinks</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openNearestNeighborAnalysis()">📊 NN Analysis</button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.openPhotoMapper()">📷 Photo Map</button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.openArcGISImporter()">🌐 ArcGIS REST</button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.openCoordinatesModal()">📍 Coordinates</button>
@@ -1226,6 +1272,762 @@ async function openClip() {
                     refreshUI();
                 } catch (e) {
                     showErrorToast(handleError(e, 'GISTools', 'Clip'));
+                }
+            };
+        }
+    });
+}
+
+// ============================
+// New Turf.js Geoprocessing Tools
+// ============================
+
+// Helper: require spatial layer
+function requireSpatialLayer(geomTypes = null) {
+    const layer = getActiveLayer();
+    if (!layer || layer.type !== 'spatial') { showToast('Need a spatial layer', 'warning'); return null; }
+    if (typeof turf === 'undefined') { showToast('Turf.js not loaded yet', 'warning'); return null; }
+    if (geomTypes) {
+        const types = Array.isArray(geomTypes) ? geomTypes : [geomTypes];
+        const has = layer.geojson.features.some(f => f.geometry && types.includes(f.geometry.type));
+        if (!has) { showToast(`Need ${types.join(' or ')} features`, 'warning'); return null; }
+    }
+    return layer;
+}
+
+// Helper: layer dropdown options
+function layerOptions(filterType = null) {
+    return getLayers()
+        .filter(l => l.type === 'spatial' && (!filterType || l.geojson.features.some(f => f.geometry && (Array.isArray(filterType) ? filterType.includes(f.geometry.type) : f.geometry.type === filterType))))
+        .map(l => `<option value="${l.id}">${l.name} (${l.geojson.features.length})</option>`)
+        .join('');
+}
+
+function addResultLayer(dataset) {
+    addLayer(dataset);
+    mapManager.addLayer(dataset, getLayers().indexOf(dataset));
+    refreshUI();
+}
+
+// --- Distance ---
+async function openDistanceTool() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const html = `
+        <p>Click two points on the map to measure the straight-line distance between them.</p>
+        <div class="form-group"><label>Units</label>
+            <select id="dist-units"><option value="kilometers">Kilometers</option><option value="miles">Miles</option><option value="meters">Meters</option><option value="feet">Feet</option></select>
+        </div>`;
+    showModal('Measure Distance', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Pick Points on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const units = overlay.querySelector('#dist-units').value;
+                close();
+                const pts = await mapManager.startTwoPointPick('Click the first point', 'Click the second point');
+                if (!pts) return;
+                const d = gisTools.distance(turf.point(pts[0]), turf.point(pts[1]), units);
+                const line = turf.lineString([pts[0], pts[1]]);
+                const tempLayer = mapManager.showTempFeature(line, 15000);
+                showToast(`Distance: ${d.toFixed(4)} ${units}`, 'success', { duration: 10000 });
+            };
+        }
+    });
+}
+
+// --- Bearing ---
+async function openBearingTool() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const html = `<p>Click two points on the map. The bearing (compass direction) from the first point to the second will be calculated.</p>`;
+    showModal('Measure Bearing', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Pick Points on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                close();
+                const pts = await mapManager.startTwoPointPick('Click the origin point', 'Click the target point');
+                if (!pts) return;
+                const b = gisTools.bearing(turf.point(pts[0]), turf.point(pts[1]));
+                const line = turf.lineString([pts[0], pts[1]]);
+                mapManager.showTempFeature(line, 15000);
+                const cardinal = bearingToCardinal(b);
+                showToast(`Bearing: ${b.toFixed(2)}° (${cardinal})`, 'success', { duration: 10000 });
+            };
+        }
+    });
+}
+
+function bearingToCardinal(b) {
+    const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+    const norm = ((b % 360) + 360) % 360;
+    return dirs[Math.round(norm / 22.5) % 16];
+}
+
+// --- Destination ---
+async function openDestinationTool() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const html = `
+        <p>Click a starting point, then enter a distance and bearing to find the destination point.</p>
+        <div class="form-group"><label>Distance</label>
+            <input type="number" id="dest-dist" value="1" min="0.001" step="0.1"></div>
+        <div class="form-group"><label>Bearing (degrees, 0=North, 90=East)</label>
+            <input type="number" id="dest-bearing" value="0" min="-180" max="360" step="1"></div>
+        <div class="form-group"><label>Units</label>
+            <select id="dest-units"><option value="kilometers">Kilometers</option><option value="miles">Miles</option><option value="meters">Meters</option></select></div>`;
+    showModal('Find Destination Point', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Pick Origin on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const dist = parseFloat(overlay.querySelector('#dest-dist').value);
+                const brng = parseFloat(overlay.querySelector('#dest-bearing').value);
+                const units = overlay.querySelector('#dest-units').value;
+                close();
+                const origin = await mapManager.startPointPick('Click the starting point');
+                if (!origin) return;
+                const dest = gisTools.destination(turf.point(origin), dist, brng, units);
+                const line = turf.lineString([origin, dest.geometry.coordinates]);
+                mapManager.showTempFeature({type:'FeatureCollection',features:[dest, line]}, 15000);
+                showToast(`Destination: [${dest.geometry.coordinates[1].toFixed(6)}, ${dest.geometry.coordinates[0].toFixed(6)}]`, 'success', { duration: 10000 });
+            };
+        }
+    });
+}
+
+// --- Along ---
+async function openAlongTool() {
+    const layer = requireSpatialLayer(['LineString', 'MultiLineString']);
+    if (!layer) return;
+
+    const html = `
+        <p>Get a point at a specified distance along a line feature.</p>
+        <div class="form-group"><label>Distance along line</label>
+            <input type="number" id="along-dist" value="1" min="0" step="0.1"></div>
+        <div class="form-group"><label>Units</label>
+            <select id="along-units"><option value="kilometers">Kilometers</option><option value="miles">Miles</option><option value="meters">Meters</option></select></div>
+        <div class="info-box text-xs">Uses the first LineString feature in the active layer.</div>`;
+    showModal('Point Along Line', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Find Point</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = () => {
+                const dist = parseFloat(overlay.querySelector('#along-dist').value);
+                const units = overlay.querySelector('#along-units').value;
+                close();
+                const line = layer.geojson.features.find(f => f.geometry?.type === 'LineString');
+                if (!line) return showToast('No LineString found in layer', 'warning');
+                try {
+                    const pt = gisTools.pointAlong(line, dist, units);
+                    mapManager.showTempFeature(pt, 15000);
+                    showToast(`Point at ${dist} ${units}: [${pt.geometry.coordinates[1].toFixed(6)}, ${pt.geometry.coordinates[0].toFixed(6)}]`, 'success', { duration: 8000 });
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'Along'));
+                }
+            };
+        }
+    });
+}
+
+// --- Point to Line Distance ---
+async function openPointToLineDistanceTool() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const lineLayers = layerOptions(['LineString', 'MultiLineString']);
+    if (!lineLayers) return showToast('Need a line layer loaded', 'warning');
+
+    const html = `
+        <p>Click a point on the map, then measure the shortest distance to a line layer.</p>
+        <div class="form-group"><label>Line layer</label>
+            <select id="ptl-layer">${lineLayers}</select></div>
+        <div class="form-group"><label>Units</label>
+            <select id="ptl-units"><option value="kilometers">Kilometers</option><option value="miles">Miles</option><option value="meters">Meters</option></select></div>`;
+    showModal('Point to Line Distance', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Pick Point on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const layerId = overlay.querySelector('#ptl-layer').value;
+                const units = overlay.querySelector('#ptl-units').value;
+                const lineLayer = getLayers().find(l => l.id === layerId);
+                close();
+                if (!lineLayer) return showToast('Line layer not found', 'warning');
+                const pt = await mapManager.startPointPick('Click a point to measure from');
+                if (!pt) return;
+                const line = lineLayer.geojson.features.find(f => f.geometry?.type === 'LineString');
+                if (!line) return showToast('No LineString found', 'warning');
+                try {
+                    const d = gisTools.pointToLineDistance(turf.point(pt), line, units);
+                    const snap = gisTools.nearestPointOnLine(line, turf.point(pt), units);
+                    const connector = turf.lineString([pt, snap.geometry.coordinates]);
+                    mapManager.showTempFeature({type:'FeatureCollection',features:[turf.point(pt), snap, connector]}, 15000);
+                    showToast(`Distance to line: ${d.toFixed(4)} ${units}`, 'success', { duration: 10000 });
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'PointToLineDistance'));
+                }
+            };
+        }
+    });
+}
+
+// --- BBox Clip (draw rectangle) ---
+async function openBboxClip() {
+    const layer = requireSpatialLayer();
+    if (!layer) return;
+
+    showModal('BBox Clip', '<p>Draw a rectangle on the map to clip features to that area.</p>', {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Draw Rectangle on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                close();
+                const bbox = await mapManager.startRectangleDraw('Click and drag to draw a clip rectangle');
+                if (!bbox) return;
+                try {
+                    const result = await gisTools.bboxClipFeatures(layer, bbox);
+                    addResultLayer(result);
+                    showToast(`Clipped: ${result.geojson.features.length} features`, 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'BBoxClip'));
+                }
+            };
+        }
+    });
+}
+
+// --- Bezier Spline ---
+async function openBezierSpline() {
+    const layer = requireSpatialLayer(['LineString', 'MultiLineString']);
+    if (!layer) return;
+
+    const html = `
+        <p>Smooth line features into curved bezier splines.</p>
+        <div class="form-group"><label>Resolution (higher = smoother, default 10000)</label>
+            <input type="number" id="spline-res" value="10000" min="100" step="500"></div>
+        <div class="form-group"><label>Sharpness (0-1, higher = sharper curves)</label>
+            <input type="number" id="spline-sharp" value="0.85" min="0" max="1" step="0.05"></div>`;
+    showModal('Bezier Spline', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Apply</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const res = parseInt(overlay.querySelector('#spline-res').value);
+                const sharp = parseFloat(overlay.querySelector('#spline-sharp').value);
+                close();
+                try {
+                    const result = await gisTools.bezierSplineFeatures(layer, res, sharp);
+                    addResultLayer(result);
+                    showToast('Bezier spline applied', 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'BezierSpline'));
+                }
+            };
+        }
+    });
+}
+
+// --- Polygon Smooth ---
+async function openPolygonSmooth() {
+    const layer = requireSpatialLayer(['Polygon', 'MultiPolygon']);
+    if (!layer) return;
+
+    const html = `
+        <p>Smooth jagged polygon edges by averaging corner positions.</p>
+        <div class="form-group"><label>Iterations (higher = smoother, default 1)</label>
+            <input type="number" id="smooth-iter" value="1" min="1" max="10" step="1"></div>`;
+    showModal('Polygon Smooth', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Smooth</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const iter = parseInt(overlay.querySelector('#smooth-iter').value);
+                close();
+                try {
+                    const result = await gisTools.polygonSmoothFeatures(layer, iter);
+                    addResultLayer(result);
+                    showToast('Polygons smoothed', 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'PolygonSmooth'));
+                }
+            };
+        }
+    });
+}
+
+// --- Line Offset ---
+async function openLineOffset() {
+    const layer = requireSpatialLayer(['LineString', 'MultiLineString']);
+    if (!layer) return;
+
+    const html = `
+        <p>Create a parallel copy of line features, offset by the specified distance. Positive = right side, negative = left side.</p>
+        <div class="form-group"><label>Offset distance</label>
+            <input type="number" id="offset-dist" value="0.5" step="0.1"></div>
+        <div class="form-group"><label>Units</label>
+            <select id="offset-units"><option value="kilometers">Kilometers</option><option value="miles">Miles</option><option value="meters">Meters</option></select></div>`;
+    showModal('Line Offset', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Offset</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const dist = parseFloat(overlay.querySelector('#offset-dist').value);
+                const units = overlay.querySelector('#offset-units').value;
+                close();
+                try {
+                    const result = await gisTools.lineOffsetFeatures(layer, dist, units);
+                    addResultLayer(result);
+                    showToast(`Line offset by ${dist} ${units}`, 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'LineOffset'));
+                }
+            };
+        }
+    });
+}
+
+// --- Line Slice Along ---
+async function openLineSliceAlong() {
+    const layer = requireSpatialLayer(['LineString', 'MultiLineString']);
+    if (!layer) return;
+
+    const html = `
+        <p>Extract a section of a line between two distances measured from the start.</p>
+        <div class="form-group"><label>Start distance</label>
+            <input type="number" id="slice-start" value="0" min="0" step="0.1"></div>
+        <div class="form-group"><label>Stop distance</label>
+            <input type="number" id="slice-stop" value="1" min="0" step="0.1"></div>
+        <div class="form-group"><label>Units</label>
+            <select id="slice-units"><option value="kilometers">Kilometers</option><option value="miles">Miles</option><option value="meters">Meters</option></select></div>`;
+    showModal('Line Slice Along', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Slice</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = () => {
+                const start = parseFloat(overlay.querySelector('#slice-start').value);
+                const stop = parseFloat(overlay.querySelector('#slice-stop').value);
+                const units = overlay.querySelector('#slice-units').value;
+                close();
+                const line = layer.geojson.features.find(f => f.geometry?.type === 'LineString');
+                if (!line) return showToast('No LineString found', 'warning');
+                try {
+                    const sliced = gisTools.lineSliceAlong(line, start, stop, units);
+                    sliced.properties = { ...line.properties, _sliceStart: start, _sliceStop: stop };
+                    const fc = { type: 'FeatureCollection', features: [sliced] };
+                    const result = createSpatialDataset(`${layer.name}_slice`, fc, { format: 'derived' });
+                    addResultLayer(result);
+                    showToast(`Sliced line: ${start}-${stop} ${units}`, 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'LineSliceAlong'));
+                }
+            };
+        }
+    });
+}
+
+// --- Line Slice (between two map-clicked points) ---
+async function openLineSlice() {
+    const layer = requireSpatialLayer(['LineString', 'MultiLineString']);
+    if (!layer) return;
+
+    showModal('Line Slice Between Points', '<p>Click two points on the map. The section of the line between those points (snapped to nearest vertices) will be extracted.</p>', {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Pick Points on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                close();
+                const pts = await mapManager.startTwoPointPick('Click the start point along the line', 'Click the end point along the line');
+                if (!pts) return;
+                const line = layer.geojson.features.find(f => f.geometry?.type === 'LineString');
+                if (!line) return showToast('No LineString found', 'warning');
+                try {
+                    const sliced = gisTools.lineSlice(turf.point(pts[0]), turf.point(pts[1]), line);
+                    sliced.properties = { ...line.properties };
+                    const fc = { type: 'FeatureCollection', features: [sliced] };
+                    const result = createSpatialDataset(`${layer.name}_sliced`, fc, { format: 'derived' });
+                    addResultLayer(result);
+                    showToast('Line sliced between points', 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'LineSlice'));
+                }
+            };
+        }
+    });
+}
+
+// --- Line Intersect ---
+async function openLineIntersect() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const lineLayers = layerOptions(['LineString', 'MultiLineString']);
+    if (!lineLayers) return showToast('Need line layers loaded', 'warning');
+
+    const html = `
+        <p>Find all points where two line layers cross each other.</p>
+        <div class="form-group"><label>Line layer 1</label>
+            <select id="lint-layer1">${lineLayers}</select></div>
+        <div class="form-group"><label>Line layer 2</label>
+            <select id="lint-layer2">${lineLayers}</select></div>`;
+    showModal('Line Intersect', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Find Intersections</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = () => {
+                const l1 = getLayers().find(l => l.id === overlay.querySelector('#lint-layer1').value);
+                const l2 = getLayers().find(l => l.id === overlay.querySelector('#lint-layer2').value);
+                close();
+                if (!l1 || !l2) return showToast('Select two layers', 'warning');
+                try {
+                    const allPts = [];
+                    const lines1 = l1.geojson.features.filter(f => f.geometry?.type === 'LineString');
+                    const lines2 = l2.geojson.features.filter(f => f.geometry?.type === 'LineString');
+                    for (const a of lines1) {
+                        for (const b of lines2) {
+                            const pts = gisTools.lineIntersect(a, b);
+                            if (pts?.features) allPts.push(...pts.features);
+                        }
+                    }
+                    const fc = { type: 'FeatureCollection', features: allPts };
+                    const result = createSpatialDataset(`intersections_${l1.name}_${l2.name}`, fc, { format: 'derived' });
+                    addResultLayer(result);
+                    showToast(`Found ${allPts.length} intersection point(s)`, 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'LineIntersect'));
+                }
+            };
+        }
+    });
+}
+
+// --- Kinks (self-intersections) ---
+async function openKinks() {
+    const layer = requireSpatialLayer();
+    if (!layer) return;
+
+    showModal('Find Kinks (Self-Intersections)', '<p>Find all points where lines or polygon edges cross over themselves. Useful for detecting geometry errors.</p>', {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Find Kinks</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                close();
+                try {
+                    const result = await gisTools.findKinks(layer);
+                    addResultLayer(result);
+                    showToast(`Found ${result.geojson.features.length} kink(s)`, result.geojson.features.length > 0 ? 'warning' : 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'Kinks'));
+                }
+            };
+        }
+    });
+}
+
+// --- Combine ---
+async function openCombine() {
+    const layer = requireSpatialLayer();
+    if (!layer) return;
+
+    showModal('Combine Features', '<p>Merge all features of the same geometry type into a single Multi-geometry feature (e.g., multiple Points → one MultiPoint).</p>', {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Combine</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = () => {
+                close();
+                try {
+                    const result = gisTools.combineFeatures(layer);
+                    addResultLayer(result);
+                    showToast(`Combined into ${result.geojson.features.length} multi-feature(s)`, 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'Combine'));
+                }
+            };
+        }
+    });
+}
+
+// --- Union ---
+async function openUnion() {
+    const layer = requireSpatialLayer(['Polygon', 'MultiPolygon']);
+    if (!layer) return;
+
+    const polyCount = layer.geojson.features.filter(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')).length;
+    showModal('Union Polygons', `<p>Merge all ${polyCount} polygon features into a single unified polygon. Overlapping areas are dissolved.</p>
+        ${polyCount > 500 ? '<div class="warning-box">Large dataset — this may be slow.</div>' : ''}`, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Union</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                close();
+                try {
+                    const result = await gisTools.unionFeatures(layer);
+                    addResultLayer(result);
+                    showToast('Union complete', 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'Union'));
+                }
+            };
+        }
+    });
+}
+
+// --- Dissolve ---
+async function openDissolve() {
+    const layer = requireSpatialLayer(['Polygon', 'MultiPolygon']);
+    if (!layer) return;
+
+    const fields = (layer.schema?.fields || []).map(f => `<option value="${f.name}">${f.name}</option>`).join('');
+    const html = `
+        <p>Merge polygons that share the same value in a selected field into single polygons.</p>
+        <div class="form-group"><label>Dissolve field</label>
+            <select id="diss-field">${fields}</select></div>`;
+    showModal('Dissolve', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Dissolve</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const field = overlay.querySelector('#diss-field').value;
+                close();
+                try {
+                    const result = await gisTools.dissolveFeatures(layer, field);
+                    addResultLayer(result);
+                    showToast(`Dissolved by ${field}`, 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'Dissolve'));
+                }
+            };
+        }
+    });
+}
+
+// --- Sector ---
+async function openSector() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const html = `
+        <p>Create a pie-slice shaped polygon from a center point, radius, and two compass bearings.</p>
+        <div class="form-group"><label>Radius</label>
+            <input type="number" id="sector-radius" value="1" min="0.001" step="0.1"></div>
+        <div class="form-group"><label>Start bearing (degrees, 0=North)</label>
+            <input type="number" id="sector-b1" value="0" min="-180" max="360" step="1"></div>
+        <div class="form-group"><label>End bearing (degrees)</label>
+            <input type="number" id="sector-b2" value="90" min="-180" max="360" step="1"></div>
+        <div class="form-group"><label>Units</label>
+            <select id="sector-units"><option value="kilometers">Kilometers</option><option value="miles">Miles</option><option value="meters">Meters</option></select></div>`;
+    showModal('Create Sector', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Pick Center on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const radius = parseFloat(overlay.querySelector('#sector-radius').value);
+                const b1 = parseFloat(overlay.querySelector('#sector-b1').value);
+                const b2 = parseFloat(overlay.querySelector('#sector-b2').value);
+                const units = overlay.querySelector('#sector-units').value;
+                close();
+                const center = await mapManager.startPointPick('Click the center point for the sector');
+                if (!center) return;
+                try {
+                    const sector = gisTools.createSector(turf.point(center), radius, b1, b2, units);
+                    sector.properties = { radius, bearing1: b1, bearing2: b2, units };
+                    const fc = { type: 'FeatureCollection', features: [sector] };
+                    const result = createSpatialDataset(`sector_${b1}-${b2}`, fc, { format: 'derived' });
+                    addResultLayer(result);
+                    showToast('Sector created', 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'Sector'));
+                }
+            };
+        }
+    });
+}
+
+// --- Nearest Point ---
+async function openNearestPoint() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const ptLayers = layerOptions(['Point']);
+    if (!ptLayers) return showToast('Need a point layer loaded', 'warning');
+
+    const html = `
+        <p>Click a location on the map to find the closest feature in a point layer.</p>
+        <div class="form-group"><label>Point layer to search</label>
+            <select id="np-layer">${ptLayers}</select></div>`;
+    showModal('Nearest Point', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Pick Location on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const layerId = overlay.querySelector('#np-layer').value;
+                const ptLayer = getLayers().find(l => l.id === layerId);
+                close();
+                if (!ptLayer) return;
+                const target = await mapManager.startPointPick('Click the map to find the nearest point');
+                if (!target) return;
+                try {
+                    const nearest = gisTools.nearestPoint(turf.point(target), ptLayer);
+                    const line = turf.lineString([target, nearest.geometry.coordinates]);
+                    mapManager.showTempFeature({type:'FeatureCollection',features:[nearest, line]}, 15000);
+                    const dist = nearest.properties.distanceToPoint;
+                    const name = nearest.properties.name || nearest.properties.NAME || `Feature ${nearest.properties.featureIndex}`;
+                    showToast(`Nearest: "${name}" (${dist?.toFixed(4) || '?'} km away)`, 'success', { duration: 10000 });
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'NearestPoint'));
+                }
+            };
+        }
+    });
+}
+
+// --- Nearest Point on Line ---
+async function openNearestPointOnLine() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const lineLayers = layerOptions(['LineString', 'MultiLineString']);
+    if (!lineLayers) return showToast('Need a line layer loaded', 'warning');
+
+    const html = `
+        <p>Click a point on the map to find the closest spot on a line (snaps to the line).</p>
+        <div class="form-group"><label>Line layer</label>
+            <select id="npol-layer">${lineLayers}</select></div>`;
+    showModal('Nearest Point on Line', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Pick Point on Map</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = async () => {
+                const layerId = overlay.querySelector('#npol-layer').value;
+                const lineLayer = getLayers().find(l => l.id === layerId);
+                close();
+                if (!lineLayer) return;
+                const pt = await mapManager.startPointPick('Click the map to snap to the nearest line');
+                if (!pt) return;
+                const line = lineLayer.geojson.features.find(f => f.geometry?.type === 'LineString');
+                if (!line) return showToast('No LineString found', 'warning');
+                try {
+                    const snap = gisTools.nearestPointOnLine(line, turf.point(pt));
+                    const connector = turf.lineString([pt, snap.geometry.coordinates]);
+                    mapManager.showTempFeature({type:'FeatureCollection',features:[snap, connector]}, 15000);
+                    const dist = snap.properties.dist;
+                    showToast(`Snapped to line at ${dist?.toFixed(4) || '?'} km`, 'success', { duration: 10000 });
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'NearestPointOnLine'));
+                }
+            };
+        }
+    });
+}
+
+// --- Nearest Point to Line ---
+async function openNearestPointToLine() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const ptLayers = layerOptions(['Point']);
+    const lineLayers = layerOptions(['LineString', 'MultiLineString']);
+    if (!ptLayers || !lineLayers) return showToast('Need a point layer and a line layer', 'warning');
+
+    const html = `
+        <p>Find which point in a point layer is closest to a specific line feature.</p>
+        <div class="form-group"><label>Point layer</label>
+            <select id="nptl-pts">${ptLayers}</select></div>
+        <div class="form-group"><label>Line layer</label>
+            <select id="nptl-line">${lineLayers}</select></div>`;
+    showModal('Nearest Point to Line', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Find</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = () => {
+                const ptsLayer = getLayers().find(l => l.id === overlay.querySelector('#nptl-pts').value);
+                const lineLayer = getLayers().find(l => l.id === overlay.querySelector('#nptl-line').value);
+                close();
+                if (!ptsLayer || !lineLayer) return;
+                const line = lineLayer.geojson.features.find(f => f.geometry?.type === 'LineString');
+                if (!line) return showToast('No LineString found', 'warning');
+                try {
+                    const nearest = gisTools.nearestPointToLine(ptsLayer.geojson, line);
+                    mapManager.showTempFeature(nearest, 15000);
+                    const name = nearest.properties?.name || nearest.properties?.NAME || 'Unnamed';
+                    showToast(`Nearest to line: "${name}" (${nearest.properties?.dist?.toFixed(4) || '?'} km)`, 'success', { duration: 10000 });
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'NearestPointToLine'));
+                }
+            };
+        }
+    });
+}
+
+// --- Nearest Neighbor Analysis ---
+async function openNearestNeighborAnalysis() {
+    const layer = requireSpatialLayer(['Point']);
+    if (!layer) return;
+
+    showModal('Nearest Neighbor Analysis', '<p>Analyze the spatial distribution of points. Returns statistical metrics that indicate whether points are clustered, random, or dispersed.</p>', {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Run Analysis</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = () => {
+                close();
+                try {
+                    const result = gisTools.nearestNeighborAnalysis(layer);
+                    const p = result.properties || result;
+                    const pattern = p.zscore < -1.65 ? 'Clustered' : (p.zscore > 1.65 ? 'Dispersed' : 'Random');
+                    const html = `
+                        <div style="display:flex;flex-direction:column;gap:8px;">
+                            <div style="text-align:center;font-size:20px;font-weight:700;color:var(--gold-light);margin-bottom:4px;">${pattern}</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                                <div style="padding:8px;background:var(--bg-surface);border-radius:4px;border:1px solid var(--border);">
+                                    <div style="font-size:11px;color:var(--text-muted);">Observed Mean Distance</div>
+                                    <div style="font-size:16px;font-weight:600;color:var(--text);">${p.observedMeanDistance?.toFixed(6) || 'N/A'}</div>
+                                </div>
+                                <div style="padding:8px;background:var(--bg-surface);border-radius:4px;border:1px solid var(--border);">
+                                    <div style="font-size:11px;color:var(--text-muted);">Expected Mean Distance</div>
+                                    <div style="font-size:16px;font-weight:600;color:var(--text);">${p.expectedMeanDistance?.toFixed(6) || 'N/A'}</div>
+                                </div>
+                                <div style="padding:8px;background:var(--bg-surface);border-radius:4px;border:1px solid var(--border);">
+                                    <div style="font-size:11px;color:var(--text-muted);">Nearest Neighbor Ratio</div>
+                                    <div style="font-size:16px;font-weight:600;color:var(--text);">${p.nearestNeighborIndex?.toFixed(4) || 'N/A'}</div>
+                                </div>
+                                <div style="padding:8px;background:var(--bg-surface);border-radius:4px;border:1px solid var(--border);">
+                                    <div style="font-size:11px;color:var(--text-muted);">Z-Score</div>
+                                    <div style="font-size:16px;font-weight:600;color:var(--text);">${p.zscore?.toFixed(4) || 'N/A'}</div>
+                                </div>
+                            </div>
+                            <div class="info-box text-xs" style="margin-top:4px;">
+                                <strong>Interpretation:</strong> Z-score &lt; -1.65 → Clustered. Z-score &gt; 1.65 → Dispersed. Between → Random.
+                                A ratio &lt; 1 suggests clustering, &gt; 1 suggests dispersion.
+                            </div>
+                            <div style="font-size:11px;color:var(--text-muted);">
+                                Features analyzed: ${p.numberOfPoints || layer.geojson.features.filter(f => f.geometry?.type === 'Point').length}
+                            </div>
+                        </div>`;
+                    showModal('Nearest Neighbor Analysis — Results', html, { width: '450px' });
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'NearestNeighborAnalysis'));
+                }
+            };
+        }
+    });
+}
+
+// --- Points Within Polygon ---
+async function openPointsWithinPolygon() {
+    if (typeof turf === 'undefined') return showToast('Turf.js not loaded yet', 'warning');
+    const ptLayers = layerOptions(['Point']);
+    const polyLayers = layerOptions(['Polygon', 'MultiPolygon']);
+    if (!ptLayers || !polyLayers) return showToast('Need both a point layer and a polygon layer', 'warning');
+
+    const html = `
+        <p>Find all points from one layer that fall inside polygons from another layer.</p>
+        <div class="form-group"><label>Point layer</label>
+            <select id="pwp-pts">${ptLayers}</select></div>
+        <div class="form-group"><label>Polygon layer</label>
+            <select id="pwp-polys">${polyLayers}</select></div>`;
+    showModal('Points Within Polygon', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button><button class="btn btn-primary apply-btn">Find Points</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelector('.apply-btn').onclick = () => {
+                const ptsLayer = getLayers().find(l => l.id === overlay.querySelector('#pwp-pts').value);
+                const polyLayer = getLayers().find(l => l.id === overlay.querySelector('#pwp-polys').value);
+                close();
+                if (!ptsLayer || !polyLayer) return;
+                try {
+                    const result = gisTools.pointsWithinPolygon(ptsLayer, polyLayer);
+                    addResultLayer(result);
+                    const total = ptsLayer.geojson.features.length;
+                    const inside = result.geojson.features.length;
+                    showToast(`${inside} of ${total} points are within the polygon(s)`, 'success');
+                } catch (e) {
+                    showErrorToast(handleError(e, 'GISTools', 'PointsWithinPolygon'));
                 }
             };
         }
@@ -2453,11 +3255,43 @@ function showToolInfo() {
             ]
         },
         {
-            title: 'GIS Tools',
+            title: 'GIS Tools — Measurement',
             tools: [
-                ['Buffer', 'Create buffer polygons around point/line/polygon features at a set distance.'],
-                ['Simplify', 'Reduce vertex count on geometries to shrink file size while preserving shape.'],
-                ['Clip to Extent', 'Clip features to the current visible map area.']
+                ['Distance', 'Measure the straight-line distance between two points you click on the map.'],
+                ['Bearing', 'Find the compass direction (in degrees) from one point to another.'],
+                ['Destination', 'Given a start point, distance, and compass direction, find where you would end up.'],
+                ['Along', 'Find a point at a specific distance along a line feature.'],
+                ['Pt→Line Distance', 'Measure the shortest perpendicular distance from a point to a line.']
+            ]
+        },
+        {
+            title: 'GIS Tools — Transformation',
+            tools: [
+                ['Buffer', 'Draw a zone around features at a set distance.'],
+                ['BBox Clip', 'Draw a rectangle on the map and clip all features to that area.'],
+                ['Clip to Extent', 'Clip features to the current visible map area.'],
+                ['Simplify', 'Reduce vertex count on geometries to shrink file size.'],
+                ['Bezier Spline', 'Smooth jagged lines into gentle flowing curves.'],
+                ['Polygon Smooth', 'Round off rough polygon edges.'],
+                ['Line Offset', 'Create a parallel copy of a line shifted left or right.'],
+                ['Sector', 'Create a pie-slice shaped area from a center point, radius, and compass bearings.']
+            ]
+        },
+        {
+            title: 'GIS Tools — Lines & Analysis',
+            tools: [
+                ['Line Slice Along', 'Extract a section of a line between two distances.'],
+                ['Line Slice (Points)', 'Click two points on the map to cut out the section of line between them.'],
+                ['Line Intersect', 'Find all points where two sets of lines cross each other.'],
+                ['Kinks', 'Find self-intersections where a line or polygon edge crosses itself.'],
+                ['Combine', 'Merge all features of the same type into one multi-feature.'],
+                ['Union', 'Merge all polygons into a single unified shape.'],
+                ['Dissolve', 'Merge polygons that share the same attribute value.'],
+                ['Points in Polygon', 'Find which points fall inside which polygons.'],
+                ['Nearest Point', 'Click the map to find the closest feature in a point layer.'],
+                ['Nearest Pt on Line', 'Click near a line to snap to the closest point on it.'],
+                ['Nearest Pt to Line', 'Find which point in a layer is closest to a line.'],
+                ['NN Analysis', 'Statistically test whether points are clustered, dispersed, or random.']
             ]
         },
         {
@@ -2544,6 +3378,28 @@ window.app = {
     openBuffer,
     openSimplify,
     openClip,
+    openDistanceTool,
+    openBearingTool,
+    openDestinationTool,
+    openAlongTool,
+    openPointToLineDistanceTool,
+    openBboxClip,
+    openBezierSpline,
+    openPolygonSmooth,
+    openLineOffset,
+    openLineSliceAlong,
+    openLineSlice,
+    openLineIntersect,
+    openKinks,
+    openCombine,
+    openUnion,
+    openDissolve,
+    openSector,
+    openNearestPoint,
+    openNearestPointOnLine,
+    openNearestPointToLine,
+    openNearestNeighborAnalysis,
+    openPointsWithinPolygon,
     openPhotoMapper: openPhotoMapper,
     openArcGISImporter: openArcGISImporter,
     openCoordinatesModal: openCoordinatesModal,
