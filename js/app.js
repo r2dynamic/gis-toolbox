@@ -257,6 +257,47 @@ function setupEventListeners() {
     // Merge layers
     document.getElementById('btn-merge')?.addEventListener('click', handleMergeLayers);
 
+    // Mobile dropdown menu
+    const mobileMenuBtn = document.getElementById('btn-mobile-menu');
+    const mobileDropdown = document.getElementById('mobile-dropdown-menu');
+    if (mobileMenuBtn && mobileDropdown) {
+        const closeMobileMenu = () => {
+            mobileDropdown.classList.add('hidden');
+            const backdrop = document.getElementById('mobile-menu-backdrop');
+            if (backdrop) backdrop.remove();
+        };
+        mobileMenuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = !mobileDropdown.classList.contains('hidden');
+            if (isOpen) { closeMobileMenu(); return; }
+            mobileDropdown.classList.remove('hidden');
+            // Add backdrop to catch taps outside
+            let backdrop = document.getElementById('mobile-menu-backdrop');
+            if (!backdrop) {
+                backdrop = document.createElement('div');
+                backdrop.id = 'mobile-menu-backdrop';
+                backdrop.className = 'mobile-dropdown-backdrop';
+                document.body.appendChild(backdrop);
+            }
+            backdrop.addEventListener('click', closeMobileMenu, { once: true });
+        });
+        mobileDropdown.addEventListener('click', (e) => {
+            const item = e.target.closest('.mobile-menu-item');
+            if (!item) return;
+            const action = item.dataset.action;
+            closeMobileMenu();
+            switch (action) {
+                case 'import': document.getElementById('btn-import')?.click(); break;
+                case 'photos': openPhotoMapper(); break;
+                case 'arcgis': openArcGISImporter(); break;
+                case 'coords': openCoordinatesModal(); break;
+                case 'draw': createDrawLayer(); break;
+                case 'logs': toggleLogs(); break;
+                case 'info': showToolInfo(); break;
+            }
+        });
+    }
+
     // Undo / Redo
     document.getElementById('btn-undo')?.addEventListener('click', handleUndo);
     document.getElementById('btn-redo')?.addEventListener('click', handleRedo);

@@ -55,6 +55,8 @@
             <button class="btn btn-secondary btn-sm hidden" id="btn-merge">Merge Layers</button>
         </div>
         <div class="header-right">
+            <!-- Mobile overflow menu button (hidden on desktop) -->
+            <button class="btn btn-ghost btn-sm mobile-menu-btn" id="btn-mobile-menu" title="Menu">☰</button>
             <select id="basemap-select" class="btn-sm" title="Basemap">
                 <option value="osm">Street Map</option>
                 <option value="light">Light / Gray</option>
@@ -69,6 +71,18 @@
             <button class="btn btn-ghost" id="btn-info" title="Tool Guide" style="font-size:22px;padding:2px 6px;line-height:1;">ℹ️</button>
         </div>
     </header>
+
+    <!-- Mobile dropdown menu (hidden on desktop) -->
+    <div class="mobile-dropdown-menu hidden" id="mobile-dropdown-menu">
+        <button class="mobile-menu-item" data-action="import"><span>📂</span><span>Import Data</span></button>
+        <button class="mobile-menu-item" data-action="photos"><span>📷</span><span>Photo Mapper</span></button>
+        <button class="mobile-menu-item" data-action="arcgis"><span>🌐</span><span>ArcGIS REST</span></button>
+        <button class="mobile-menu-item" data-action="coords"><span>📍</span><span>Coordinates</span></button>
+        <button class="mobile-menu-item" data-action="draw"><span>✏️</span><span>Draw</span></button>
+        <div class="mobile-menu-sep"></div>
+        <button class="mobile-menu-item" data-action="logs"><span>📋</span><span>Logs</span></button>
+        <button class="mobile-menu-item" data-action="info"><span>ℹ️</span><span>Tool Guide</span></button>
+    </div>
 
     <!-- ================================ -->
     <!-- MAIN 3-PANEL LAYOUT (Desktop)    -->

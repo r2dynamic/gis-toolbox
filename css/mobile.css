@@ -38,52 +38,20 @@
         max-width: clamp(40px, 15vw, 100px);
     }
 
+    /* Hide header-center items; move to dropdown menu */
     .header-center {
         flex: 1;
         justify-content: flex-end;
-        gap: 3px;
-        overflow-x: auto;
+        gap: 4px;
+        overflow: visible;
         flex-wrap: nowrap;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
     }
-    .header-center::-webkit-scrollbar { display: none; }
-    .header-center .btn {
-        padding: 4px 6px;
-        font-size: 11px;
-        min-height: 28px;
-        gap: 3px;
-        flex-shrink: 0;
-    }
-    /* Hide text labels – emoji-only on mobile header */
-    .header-center .btn span.btn-icon-text + span,
-    .header-center .btn:not(.btn-icon-text-only) > span:last-child {
-        display: none;
-    }
-    /* Keep only the emoji visible */
-    .header-center .btn .btn-icon-text {
-        font-size: 13px;
-        line-height: 1;
+    /* Hide all buttons except undo/redo */
+    .header-center .btn:not(#btn-undo):not(#btn-redo) {
+        display: none !important;
     }
     .header-sep { display: none; }
-    .header .btn-ghost {
-        padding: 3px 4px;
-        min-height: 26px;
-        font-size: 13px;
-    }
 
-    .header-right {
-        gap: 2px;
-        flex-shrink: 0;
-    }
-    .header-right select {
-        padding: 2px 4px;
-        font-size: 10px;
-        max-width: 60px;
-    }
-    /* Hide basemap select on mobile */
-    #basemap-select { display: none; }
-    #btn-logs { padding: 2px 4px; font-size: 12px; }
     /* Undo/redo compact */
     #btn-undo, #btn-redo {
         padding: 3px 4px;
@@ -91,6 +59,26 @@
         min-height: 26px;
         min-width: 26px;
     }
+
+    /* Show mobile hamburger menu button */
+    .mobile-menu-btn {
+        display: inline-flex !important;
+        font-size: 22px;
+        font-weight: 900;
+        padding: 2px 6px;
+        min-height: 28px;
+        line-height: 1;
+        color: var(--gold-light) !important;
+    }
+
+    .header-right {
+        gap: 3px;
+        flex-shrink: 0;
+    }
+    /* Hide desktop-only header-right items on mobile */
+    #basemap-select { display: none; }
+    #btn-logs { display: none; }
+    #btn-info { display: none; }
     /* Hide merge button on mobile header – it's in tools tab */
     #btn-merge { display: none !important; }
 
