@@ -59,12 +59,58 @@ const BASEMAPS = {
 
 const LAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
 
+// Point symbol shapes — SVG icon factories
+const POINT_SYMBOLS = {
+    circle: null, // default circleMarker
+    square: (color, fillColor, size, opacity) => L.divIcon({
+        className: 'point-symbol',
+        html: `<svg width="${size*2}" height="${size*2}" viewBox="0 0 ${size*2} ${size*2}"><rect x="1" y="1" width="${size*2-2}" height="${size*2-2}" fill="${fillColor}" fill-opacity="${opacity}" stroke="${color}" stroke-width="2" rx="2"/></svg>`,
+        iconSize: [size*2, size*2],
+        iconAnchor: [size, size]
+    }),
+    triangle: (color, fillColor, size, opacity) => L.divIcon({
+        className: 'point-symbol',
+        html: `<svg width="${size*2}" height="${size*2}" viewBox="0 0 ${size*2} ${size*2}"><polygon points="${size},1 ${size*2-1},${size*2-1} 1,${size*2-1}" fill="${fillColor}" fill-opacity="${opacity}" stroke="${color}" stroke-width="2"/></svg>`,
+        iconSize: [size*2, size*2],
+        iconAnchor: [size, size]
+    }),
+    diamond: (color, fillColor, size, opacity) => L.divIcon({
+        className: 'point-symbol',
+        html: `<svg width="${size*2}" height="${size*2}" viewBox="0 0 ${size*2} ${size*2}"><polygon points="${size},1 ${size*2-1},${size} ${size},${size*2-1} 1,${size}" fill="${fillColor}" fill-opacity="${opacity}" stroke="${color}" stroke-width="2"/></svg>`,
+        iconSize: [size*2, size*2],
+        iconAnchor: [size, size]
+    }),
+    star: (color, fillColor, size, opacity) => {
+        const cx = size, cy = size, r = size - 1, ri = r * 0.4;
+        let pts = '';
+        for (let i = 0; i < 5; i++) {
+            const aOuter = (Math.PI / 2) + (2 * Math.PI * i / 5);
+            const aInner = aOuter + Math.PI / 5;
+            pts += `${cx + r * Math.cos(aOuter)},${cy - r * Math.sin(aOuter)} `;
+            pts += `${cx + ri * Math.cos(aInner)},${cy - ri * Math.sin(aInner)} `;
+        }
+        return L.divIcon({
+            className: 'point-symbol',
+            html: `<svg width="${size*2}" height="${size*2}" viewBox="0 0 ${size*2} ${size*2}"><polygon points="${pts.trim()}" fill="${fillColor}" fill-opacity="${opacity}" stroke="${color}" stroke-width="1.5"/></svg>`,
+            iconSize: [size*2, size*2],
+            iconAnchor: [size, size]
+        });
+    },
+    pin: (color, fillColor, size, opacity) => L.divIcon({
+        className: 'point-symbol',
+        html: `<svg width="${size*2}" height="${size*2+8}" viewBox="0 0 ${size*2} ${size*2+8}"><path d="M${size} ${size*2+6} C${size} ${size*2+6} ${size*2-1} ${size+2} ${size*2-1} ${size} A${size-1} ${size-1} 0 1 0 1 ${size} C1 ${size+2} ${size} ${size*2+6} ${size} ${size*2+6}Z" fill="${fillColor}" fill-opacity="${opacity}" stroke="${color}" stroke-width="1.5"/><circle cx="${size}" cy="${size}" r="${size*0.35}" fill="${color}" opacity="0.6"/></svg>`,
+        iconSize: [size*2, size*2+8],
+        iconAnchor: [size, size*2+8]
+    })
+};
+
 class MapManager {
     constructor() {
         this.map = null;
         this.basemapLayer = null;
         this.dataLayers = new Map(); // layerId -> L.geoJSON
         this._layerNames = new Map(); // layerId -> display name
+        this._layerStyles = new Map(); // layerId -> { strokeColor, fillColor, strokeWidth, strokeOpacity, fillOpacity, pointSize, pointSymbol }
         this.clusterGroups = new Map();
         this.currentBasemap = 'voyager';
         this.drawLayer = null;
@@ -167,13 +213,39 @@ class MapManager {
 
     getBasemaps() { return BASEMAPS; }
 
+    /** Get stored style for a layer (or default) */
+    getLayerStyle(layerId) {
+        return this._layerStyles.get(layerId) || null;
+    }
+
+    /** Store style for a layer */
+    setLayerStyle(layerId, style) {
+        this._layerStyles.set(layerId, style);
+    }
+
     addLayer(dataset, colorIndex = 0, { fit = false } = {}) {
         if (!this.map || !dataset.geojson) return;
 
         // Remove existing layer for this dataset
         this.removeLayer(dataset.id);
 
-        const color = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
+        const defaultColor = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
+
+        // Use stored custom style, or create defaults
+        const stored = this._layerStyles.get(dataset.id);
+        const sty = {
+            strokeColor: stored?.strokeColor || defaultColor,
+            fillColor:   stored?.fillColor   || defaultColor,
+            strokeWidth: stored?.strokeWidth  ?? 2,
+            strokeOpacity: stored?.strokeOpacity ?? 0.8,
+            fillOpacity: stored?.fillOpacity ?? 0.3,
+            pointSize:   stored?.pointSize   ?? 6,
+            pointSymbol: stored?.pointSymbol  || 'circle'
+        };
+
+        // Store resolved style if not already saved
+        if (!stored) this._layerStyles.set(dataset.id, { ...sty });
+
         const features = dataset.geojson.features.filter(f => f.geometry);
 
         if (features.length === 0) {
@@ -183,20 +255,36 @@ class MapManager {
 
         const geojsonLayer = L.geoJSON({ type: 'FeatureCollection', features }, {
             style: (feature) => ({
-                color,
-                weight: 2,
-                opacity: 0.8,
-                fillColor: color,
-                fillOpacity: 0.3
+                color: sty.strokeColor,
+                weight: sty.strokeWidth,
+                opacity: sty.strokeOpacity,
+                fillColor: sty.fillColor,
+                fillOpacity: sty.fillOpacity
             }),
             pointToLayer: (feature, latlng) => {
+                const sym = sty.pointSymbol || 'circle';
+                if (sym === 'circle') {
+                    return L.circleMarker(latlng, {
+                        radius: sty.pointSize,
+                        fillColor: sty.fillColor,
+                        color: sty.strokeColor,
+                        weight: sty.strokeWidth,
+                        opacity: sty.strokeOpacity,
+                        fillOpacity: sty.fillOpacity + 0.3 > 1 ? 1 : sty.fillOpacity + 0.3
+                    });
+                }
+                const factory = POINT_SYMBOLS[sym];
+                if (factory) {
+                    return L.marker(latlng, { icon: factory(sty.strokeColor, sty.fillColor, sty.pointSize, sty.fillOpacity + 0.3 > 1 ? 1 : sty.fillOpacity + 0.3) });
+                }
+                // Fallback to circle
                 return L.circleMarker(latlng, {
-                    radius: 6,
-                    fillColor: color,
-                    color: '#fff',
-                    weight: 2,
-                    opacity: 1,
-                    fillOpacity: 0.8
+                    radius: sty.pointSize,
+                    fillColor: sty.fillColor,
+                    color: sty.strokeColor,
+                    weight: sty.strokeWidth,
+                    opacity: sty.strokeOpacity,
+                    fillOpacity: sty.fillOpacity + 0.3 > 1 ? 1 : sty.fillOpacity + 0.3
                 });
             },
             onEachFeature: (feature, layer) => {
@@ -212,17 +300,17 @@ class MapManager {
                     L.DomEvent.stopPropagation(e);
                     if (this._selectionMode) {
                         // Selection mode: click toggles selection, shift adds
-                        this._handleSelectionClick(dataset.id, featureIndex, e.originalEvent?.shiftKey, color);
+                        this._handleSelectionClick(dataset.id, featureIndex, e.originalEvent?.shiftKey, sty.strokeColor);
                     } else {
                         const clickLatLng = e.latlng;
                         const nearby = this._findFeaturesNearClick(clickLatLng, dataset.id, featureIndex);
                         if (nearby.length > 1) {
                             // Multiple stacked features — show cycling popup
-                            this.highlightFeature(layer, color);
+                            this.highlightFeature(layer, sty.strokeColor);
                             this._showMultiPopup(nearby, clickLatLng);
                         } else {
                             // Single feature — show simple popup (no cycling UI)
-                            this.highlightFeature(layer, color);
+                            this.highlightFeature(layer, sty.strokeColor);
                             this._popupHits = nearby;
                             this._popupIndex = 0;
                             this._popupLatLng = clickLatLng;
@@ -291,6 +379,34 @@ class MapManager {
         } else {
             this.map.removeLayer(layer);
         }
+    }
+
+    /**
+     * Apply new style to an existing layer and re-render it.
+     * @param {string} layerId
+     * @param {object} dataset - the full dataset from state
+     * @param {object} style - { strokeColor, fillColor, strokeWidth, strokeOpacity, fillOpacity, pointSize, pointSymbol }
+     */
+    restyleLayer(layerId, dataset, style) {
+        this._layerStyles.set(layerId, { ...style });
+        // Re-add the layer with the new style — addLayer reads from _layerStyles
+        const idx = this._getLayerZIndex(layerId);
+        this.addLayer(dataset, idx, { fit: false });
+    }
+
+    /** Get approximate z-index from dataLayers insertion order */
+    _getLayerZIndex(layerId) {
+        let i = 0;
+        for (const id of this.dataLayers.keys()) {
+            if (id === layerId) return i;
+            i++;
+        }
+        return 0;
+    }
+
+    /** Get available point symbol names */
+    static get pointSymbols() {
+        return Object.keys(POINT_SYMBOLS);
     }
 
     /**

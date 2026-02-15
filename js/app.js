@@ -677,12 +677,158 @@ function renderOutputPanel() {
             <div class="panel-section-body">
                 <button class="btn btn-sm btn-secondary w-full" onclick="window.app.showDataTable()">Show Data Table</button>
             </div>
-        </div>`;
+        </div>
+
+        ${layer.type === 'spatial' ? buildStylePanel(layer) : ''}`;
 
     // Re-bind AGOL toggle
     document.getElementById('agol-toggle')?.addEventListener('change', () => {
         toggleAGOLCompat();
         renderOutputPanel();
+    });
+
+    // Bind style panel controls
+    if (layer.type === 'spatial') {
+        bindStylePanel(layer);
+    }
+}
+
+// ============================
+// Layer Styling Panel
+// ============================
+
+function _detectGeomTypes(layer) {
+    const types = new Set();
+    for (const f of (layer.geojson?.features || [])) {
+        if (f.geometry?.type) {
+            const t = f.geometry.type;
+            if (t === 'Point' || t === 'MultiPoint') types.add('point');
+            else if (t === 'LineString' || t === 'MultiLineString') types.add('line');
+            else if (t === 'Polygon' || t === 'MultiPolygon') types.add('polygon');
+        }
+    }
+    return types;
+}
+
+function buildStylePanel(layer) {
+    const sty = mapManager.getLayerStyle(layer.id) || {
+        strokeColor: '#2563eb', fillColor: '#2563eb',
+        strokeWidth: 2, strokeOpacity: 0.8, fillOpacity: 0.3,
+        pointSize: 6, pointSymbol: 'circle'
+    };
+    const geomTypes = _detectGeomTypes(layer);
+    const hasPoints = geomTypes.has('point');
+    const hasFills = geomTypes.has('polygon') || geomTypes.has('point');
+    const hasLines = geomTypes.has('line') || geomTypes.has('polygon');
+
+    const symbolOptions = ['circle', 'square', 'triangle', 'diamond', 'star', 'pin'];
+    const symbolLabels = { circle: '●', square: '■', triangle: '▲', diamond: '◆', star: '★', pin: '📍' };
+
+    return `
+        <div class="panel-section style-panel">
+            <div class="panel-section-header" onclick="toggleSection(this)">
+                Layer Style <span class="arrow">▼</span>
+            </div>
+            <div class="panel-section-body">
+                <!-- Stroke Color -->
+                <div class="style-row">
+                    <label>Stroke Color</label>
+                    <input type="color" id="sty-stroke-color" value="${sty.strokeColor}" class="style-color-input">
+                </div>
+
+                ${hasFills ? `
+                <!-- Fill Color -->
+                <div class="style-row">
+                    <label>Fill Color</label>
+                    <input type="color" id="sty-fill-color" value="${sty.fillColor}" class="style-color-input">
+                </div>` : ''}
+
+                <!-- Stroke Width -->
+                ${hasLines || hasFills ? `
+                <div class="style-row">
+                    <label>Stroke Width</label>
+                    <input type="range" id="sty-stroke-width" min="0.5" max="8" step="0.5" value="${sty.strokeWidth}" class="style-range">
+                    <span class="style-value" id="sty-stroke-width-val">${sty.strokeWidth}</span>
+                </div>` : ''}
+
+                <!-- Stroke Opacity -->
+                <div class="style-row">
+                    <label>Stroke Opacity</label>
+                    <input type="range" id="sty-stroke-opacity" min="0" max="1" step="0.05" value="${sty.strokeOpacity}" class="style-range">
+                    <span class="style-value" id="sty-stroke-opacity-val">${Math.round(sty.strokeOpacity * 100)}%</span>
+                </div>
+
+                ${hasFills ? `
+                <!-- Fill Opacity -->
+                <div class="style-row">
+                    <label>Fill Opacity</label>
+                    <input type="range" id="sty-fill-opacity" min="0" max="1" step="0.05" value="${sty.fillOpacity}" class="style-range">
+                    <span class="style-value" id="sty-fill-opacity-val">${Math.round(sty.fillOpacity * 100)}%</span>
+                </div>` : ''}
+
+                ${hasPoints ? `
+                <!-- Point Size -->
+                <div class="style-row">
+                    <label>Point Size</label>
+                    <input type="range" id="sty-point-size" min="3" max="20" step="1" value="${sty.pointSize}" class="style-range">
+                    <span class="style-value" id="sty-point-size-val">${sty.pointSize}</span>
+                </div>
+
+                <!-- Point Symbol -->
+                <div class="style-row style-row-symbols">
+                    <label>Symbol</label>
+                    <div class="style-symbols" id="sty-point-symbol">
+                        ${symbolOptions.map(s =>
+                            `<button class="style-symbol-btn ${sty.pointSymbol === s ? 'active' : ''}" data-symbol="${s}" title="${s}">${symbolLabels[s]}</button>`
+                        ).join('')}
+                    </div>
+                </div>` : ''}
+
+                <button class="btn btn-sm btn-primary w-full mt-8" id="sty-apply">Apply Style</button>
+            </div>
+        </div>`;
+}
+
+function bindStylePanel(layer) {
+    const applyBtn = document.getElementById('sty-apply');
+    if (!applyBtn) return;
+
+    // Live value previews for range sliders
+    const rangeIds = [
+        ['sty-stroke-width', 'sty-stroke-width-val', v => v],
+        ['sty-stroke-opacity', 'sty-stroke-opacity-val', v => Math.round(v * 100) + '%'],
+        ['sty-fill-opacity', 'sty-fill-opacity-val', v => Math.round(v * 100) + '%'],
+        ['sty-point-size', 'sty-point-size-val', v => v]
+    ];
+    for (const [inputId, valId, fmt] of rangeIds) {
+        const input = document.getElementById(inputId);
+        const valEl = document.getElementById(valId);
+        if (input && valEl) {
+            input.addEventListener('input', () => { valEl.textContent = fmt(input.value); });
+        }
+    }
+
+    // Symbol button selection
+    document.querySelectorAll('#sty-point-symbol .style-symbol-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#sty-point-symbol .style-symbol-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
+
+    // Apply
+    applyBtn.addEventListener('click', () => {
+        const style = {
+            strokeColor: document.getElementById('sty-stroke-color')?.value || '#2563eb',
+            fillColor: document.getElementById('sty-fill-color')?.value || document.getElementById('sty-stroke-color')?.value || '#2563eb',
+            strokeWidth: parseFloat(document.getElementById('sty-stroke-width')?.value ?? 2),
+            strokeOpacity: parseFloat(document.getElementById('sty-stroke-opacity')?.value ?? 0.8),
+            fillOpacity: parseFloat(document.getElementById('sty-fill-opacity')?.value ?? 0.3),
+            pointSize: parseInt(document.getElementById('sty-point-size')?.value ?? 6),
+            pointSymbol: document.querySelector('#sty-point-symbol .style-symbol-btn.active')?.dataset.symbol || 'circle'
+        };
+        mapManager.restyleLayer(layer.id, layer, style);
+        showToast('Style applied', 'success');
     });
 }
 

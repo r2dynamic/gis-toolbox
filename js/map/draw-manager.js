@@ -95,7 +95,8 @@ class DrawManager {
         // Wire buttons
         toolbar.querySelector('.draw-toolbar-close').onclick = () => this.hideToolbar();
         toolbar.querySelectorAll('.draw-tool-btn').forEach(btn => {
-            btn.onclick = () => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
                 const tool = btn.dataset.tool;
                 if (this._tool === tool) {
                     this.cancelDraw();
@@ -104,6 +105,11 @@ class DrawManager {
                 }
             };
         });
+
+        // Prevent all clicks/dblclicks on the toolbar from reaching the map
+        toolbar.addEventListener('click', (e) => e.stopPropagation());
+        toolbar.addEventListener('dblclick', (e) => e.stopPropagation());
+        toolbar.addEventListener('mousedown', (e) => e.stopPropagation());
 
         this.map.getContainer().appendChild(toolbar);
         this._toolbar = toolbar;

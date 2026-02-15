@@ -1344,6 +1344,117 @@ textarea { resize: vertical; min-height: 60px; }
     border-color: var(--primary);
 }
 
+/* ————— LAYER STYLE PANEL ————— */
+.style-panel { margin-top: 4px; }
+
+.style-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.style-row label {
+    flex: 0 0 90px;
+    font-size: 12px;
+    color: var(--text-muted);
+    user-select: none;
+}
+.style-color-input {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 32px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    overflow: hidden;
+}
+.style-color-input::-webkit-color-swatch-wrapper { padding: 2px; }
+.style-color-input::-webkit-color-swatch {
+    border: none;
+    border-radius: 4px;
+}
+.style-color-input::-moz-color-swatch {
+    border: none;
+    border-radius: 4px;
+}
+.style-range {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+.style-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 2px solid var(--bg-surface);
+    box-shadow: 0 0 4px rgba(0,0,0,0.4);
+    cursor: pointer;
+}
+.style-range::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 2px solid var(--bg-surface);
+    box-shadow: 0 0 4px rgba(0,0,0,0.4);
+    cursor: pointer;
+}
+.style-value {
+    flex: 0 0 36px;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.style-row-symbols {
+    align-items: flex-start;
+}
+.style-symbols {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.style-symbol-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.06);
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: 15px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    padding: 0;
+}
+.style-symbol-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: var(--text);
+}
+.style-symbol-btn.active {
+    background: rgba(37,99,235,0.15);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+/* Point symbol divIcon override */
+.point-symbol {
+    background: none !important;
+    border: none !important;
+}
+
 /* ————— MOBILE DROPDOWN MENU ————— */
 .mobile-menu-btn { display: none; }
 
