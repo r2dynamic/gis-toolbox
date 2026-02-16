@@ -48,10 +48,6 @@ const ARCGIS_ENDPOINTS = [
     {
         name: 'Utah Roads (UGRC)',
         url: 'https://services1.arcgis.com/99lidPhWCzftIe9K/ArcGIS/rest/services/UtahRoads/FeatureServer/0'
-    },
- {
-        name: 'Street Names for UDOT Routes',
-        url: 'https://services.arcgis.com/pA2nEVnB6tquxgOW/ArcGIS/rest/services/Street_Names_for_UDOT_Routes/FeatureServer/0'
     }
 ];
 

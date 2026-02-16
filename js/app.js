@@ -27,6 +27,8 @@ import * as coordUtils from './tools/coordinates.js';
 import drawManager from './map/draw-manager.js';
 import sessionStore from './core/session-store.js';
 import { SpatialAnalyzerWidget } from './widgets/spatial-analyzer.js';
+import { BulkUpdateWidget } from './widgets/bulk-update.js';
+import { ProximityJoinWidget } from './widgets/proximity-join.js';
 
 // ============================
 // Initialize app
@@ -880,6 +882,8 @@ function renderDataPrepTools() {
                 <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Pre-built workflows for common GIS tasks.</div>
                 <div style="display:flex; flex-wrap:wrap; gap:4px;">
                     <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openSpatialAnalyzer()">🔎 Find Features in Area</button><span class="geo-tip">Search for features from one layer that fall inside a drawn area or polygon layer.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openBulkUpdate()">✏️ Bulk Update</button><span class="geo-tip">Select multiple features and update their attribute fields in bulk.</span></span>
+                    <span class="geo-tool-btn"><button class="btn btn-sm btn-secondary" onclick="window.app.openProximityJoin()">↔️ Proximity Join</button><span class="geo-tip">Copy attributes from the nearest feature in a target layer to each source feature.</span></span>
                 </div>
             </div>
         </div>
@@ -2835,6 +2839,35 @@ function openSpatialAnalyzer() {
     _spatialAnalyzerWidget.toggle();
 }
 
+let _bulkUpdateWidget = null;
+
+function openBulkUpdate() {
+    if (!_bulkUpdateWidget) {
+        _bulkUpdateWidget = new BulkUpdateWidget();
+    }
+    _bulkUpdateWidget.getLayers = getLayers;
+    _bulkUpdateWidget.getLayerById = (id) => getLayers().find(l => l.id === id);
+    _bulkUpdateWidget.mapManager = mapManager;
+    _bulkUpdateWidget.refreshUI = refreshUI;
+    _bulkUpdateWidget.showToast = showToast;
+    _bulkUpdateWidget.toggle();
+}
+
+let _proximityJoinWidget = null;
+
+function openProximityJoin() {
+    if (!_proximityJoinWidget) {
+        _proximityJoinWidget = new ProximityJoinWidget();
+    }
+    _proximityJoinWidget.getLayers = getLayers;
+    _proximityJoinWidget.getLayerById = (id) => getLayers().find(l => l.id === id);
+    _proximityJoinWidget.mapManager = mapManager;
+    _proximityJoinWidget.analyzeSchema = analyzeSchema;
+    _proximityJoinWidget.refreshUI = refreshUI;
+    _proximityJoinWidget.showToast = showToast;
+    _proximityJoinWidget.toggle();
+}
+
 // ============================
 // Import Fence
 // ============================
@@ -4069,6 +4102,8 @@ window.app = {
     openCoordinatesModal: openCoordinatesModal,
     startImportFence,
     openSpatialAnalyzer,
+    openBulkUpdate,
+    openProximityJoin,
     mergeLayers: handleMergeLayers,
     showToolInfo,
     // Selection

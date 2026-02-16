@@ -105,7 +105,7 @@ export class WidgetBase {
         el.innerHTML = `
             <div class="gis-widget-header">
                 <span class="widget-icon">${this.icon}</span>
-                <span class="widget-title">${this.title}</span>
+                <span class="widget-title">${this.title}${this.opts.subtitle ? `<span class="widget-subtitle">${this.opts.subtitle}</span>` : ''}</span>
                 <button class="widget-close" title="Close">&times;</button>
             </div>
             <div class="gis-widget-body">${this.renderBody()}</div>

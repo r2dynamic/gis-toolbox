@@ -1568,7 +1568,7 @@ textarea { resize: vertical; min-height: 60px; }
     z-index: 2000;
     min-width: 340px;
     max-width: 480px;
-    max-height: 80vh;
+    max-height: calc(100vh - 32px);
     display: flex;
     flex-direction: column;
     background: var(--bg-panel);
@@ -1605,6 +1605,12 @@ textarea { resize: vertical; min-height: 60px; }
 .gis-widget-header .widget-icon {
     font-size: 16px;
     flex-shrink: 0;
+}
+.gis-widget-header .widget-subtitle {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 6px;
 }
 .gis-widget-header .widget-close {
     flex-shrink: 0;
