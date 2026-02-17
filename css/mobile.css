@@ -131,13 +131,6 @@
         border-radius: 50%;
         display: block;
     }
-    /* Menu button icon needs to be smaller to fit inside circle */
-    #mobile-fab-nav .fab-icon {
-        width: 60%;
-        height: 60%;
-        object-fit: contain;
-        border-radius: 0;
-    }
     .mobile-fab:active {
         transform: scale(0.92);
         background: rgba(44, 44, 46, 0.95);
