@@ -150,7 +150,7 @@ html, body {
 .header select option { color: var(--text); background: var(--bg-panel); }
 
 /* Header button overrides for dark background */
-.header .btn-secondary { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.1); }
+.header .btn-secondary { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.9); border: 1px solid #dbac3f; }
 .header .btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.14); }
 .header .btn-ghost { color: rgba(255,255,255,0.7); }
 .header .btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.1); color: white; }
@@ -173,7 +173,7 @@ html, body {
 }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-primary { background: var(--primary); color: white; }
-.btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+.btn-primary:hover:not(:disabled) { background: var(--primary); }
 .btn-secondary { background: rgba(28, 28, 30, 0.8); color: var(--text); border: 1px solid rgba(255,255,255,0.12); }
 .btn-secondary:hover:not(:disabled) { background: rgba(44, 44, 46, 0.85); }
 .btn-ghost {
@@ -1586,7 +1586,7 @@ textarea { resize: vertical; min-height: 60px; }
     display: flex;
     flex-direction: column;
     background: var(--bg-panel);
-    border: 1px solid var(--border-dark);
+    border: 2px solid var(--primary);
     border-radius: var(--radius);
     box-shadow: 0 12px 48px rgba(0,0,0,0.6);
     overflow: hidden;
