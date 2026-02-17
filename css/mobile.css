@@ -601,8 +601,8 @@
         z-index: 10000 !important;
     }
     .splash-modal {
-        width: 99vw !important;
-        max-width: 99vw !important;
+        width: 97vw !important;
+        max-width: 97vw !important;
         height: 96vh !important;
         max-height: 96vh !important;
         border-radius: var(--radius) !important;
