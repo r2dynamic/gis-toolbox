@@ -4248,8 +4248,19 @@ function showToolInfo() {
         </div>
     `).join('');
 
+    const isMobile = window.innerWidth < 768;
     const mobileBanner = `<div class="splash-mobile-notice">📱 Mobile site still under development — for a better experience use a larger screen</div>`;
-    showModal('<span style="font-size:32px;font-weight:700;">GIS Toolbox</span> <span style="font-size:14px;font-weight:400;opacity:0.7;"> by Ryan Romney</span>', `${mobileBanner}<div style="max-height:70vh;overflow-y:auto;">${html}</div>`, { width: '560px' });
+    const splashWidth = isMobile ? '99vw' : '560px';
+    showModal('<span style="font-size:32px;font-weight:700;">GIS Toolbox</span> <span style="font-size:14px;font-weight:400;opacity:0.7;"> by Ryan Romney</span>', `${mobileBanner}<div style="overflow-y:auto;flex:1;">${html}</div>`, {
+        width: splashWidth,
+        onMount: (overlay) => {
+            if (isMobile) {
+                overlay.classList.add('splash-overlay');
+                const modal = overlay.querySelector('.modal');
+                if (modal) modal.classList.add('splash-modal');
+            }
+        }
+    });
 }
 
 // ============================

@@ -116,6 +116,21 @@
         font-size: 22px;
         color: var(--gold-light);
         padding: 0;
+        overflow: hidden;
+    }
+    .mobile-fab .fab-icon {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+        display: block;
+    }
+    /* Menu button icon needs to be smaller to fit inside circle */
+    #mobile-fab-nav .fab-icon {
+        width: 60%;
+        height: 60%;
+        object-fit: contain;
+        border-radius: 0;
     }
     .mobile-fab:active {
         transform: scale(0.92);
@@ -573,16 +588,30 @@
     .mb-8 { margin-bottom: 6px; }
     .mt-8 { margin-top: 6px; }
 
-    /* ————— MAP CONTROLS ————— */
-    .leaflet-control-zoom a {
-        width: 36px !important;
-        height: 36px !important;
-        line-height: 36px !important;
-        font-size: 16px !important;
+    /* ————— MAP CONTROLS: hide zoom buttons on mobile ————— */
+    .leaflet-control-zoom {
+        display: none !important;
     }
     .leaflet-control-attribution {
         font-size: 8px !important;
         padding: 1px 4px !important;
+    }
+
+    /* ————— SPLASH / TOOL GUIDE: 99% fullscreen ————— */
+    .modal-overlay.splash-overlay {
+        z-index: 10000 !important;
+    }
+    .splash-modal {
+        width: 99vw !important;
+        max-width: 99vw !important;
+        height: 96vh !important;
+        max-height: 96vh !important;
+        border-radius: var(--radius) !important;
+    }
+    .splash-modal .modal-body {
+        flex: 1;
+        overflow-y: auto;
+        max-height: none !important;
     }
 
     /* ————— DRAW TOOLBAR: mobile optimized ————— */
