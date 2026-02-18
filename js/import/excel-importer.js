@@ -3,6 +3,19 @@
  */
 import { createTableDataset, createSpatialDataset } from '../core/data-model.js';
 import { AppError, ErrorCategory } from '../core/error-handler.js';
+import { dmsToDd } from '../tools/coordinates.js';
+
+/** Parse a coordinate value — handles DD numbers and DMS strings */
+function parseCoordValue(val) {
+    if (val == null || val === '') return NaN;
+    if (typeof val === 'number' && isFinite(val)) return val;
+    const s = String(val).trim();
+    const n = parseFloat(s);
+    if (!isNaN(n) && /^-?\d+\.?\d*$/.test(s)) return n;
+    const dms = dmsToDd(s);
+    if (dms != null && isFinite(dms)) return dms;
+    return n;
+}
 
 export async function importExcel(file, task) {
     task.updateProgress(20, 'Loading SheetJS...');
@@ -46,8 +59,8 @@ export async function importExcel(file, task) {
 
     if (coordInfo) {
         const features = rows.map(row => {
-            const lat = parseFloat(row[coordInfo.latField]);
-            const lon = parseFloat(row[coordInfo.lonField]);
+            const lat = parseCoordValue(row[coordInfo.latField]);
+            const lon = parseCoordValue(row[coordInfo.lonField]);
             const geom = (!isNaN(lat) && !isNaN(lon))
                 ? { type: 'Point', coordinates: [lon, lat] }
                 : null;
@@ -74,24 +87,26 @@ export async function importExcel(file, task) {
 
 function detectCoordinateColumns(fields, rows) {
     const lower = fields.map(f => f.toLowerCase());
-    const latPatterns = ['lat', 'latitude', 'y'];
-    const lonPatterns = ['lon', 'lng', 'long', 'longitude', 'x'];
+    const latPatterns = ['lat', 'latitude', 'y', 'lat_dd', 'latitude_dd'];
+    const lonPatterns = ['lon', 'lng', 'long', 'longitude', 'x', 'lon_dd', 'longitude_dd'];
 
     let latField = null, lonField = null;
     for (const p of latPatterns) {
-        const idx = lower.findIndex(f => f === p);
+        const idx = lower.findIndex(f => f === p || f === p.replace('_', ''));
         if (idx >= 0) { latField = fields[idx]; break; }
     }
     for (const p of lonPatterns) {
-        const idx = lower.findIndex(f => f === p);
+        const idx = lower.findIndex(f => f === p || f === p.replace('_', ''));
         if (idx >= 0) { lonField = fields[idx]; break; }
     }
 
     if (latField && lonField) {
         const sample = rows.slice(0, 20);
-        const validCount = sample.filter(r =>
-            !isNaN(parseFloat(r[latField])) && !isNaN(parseFloat(r[lonField]))
-        ).length;
+        const validCount = sample.filter(r => {
+            const lat = parseCoordValue(r[latField]);
+            const lon = parseCoordValue(r[lonField]);
+            return !isNaN(lat) && !isNaN(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+        }).length;
         if (validCount >= sample.length * 0.5) return { latField, lonField };
     }
     return null;

@@ -4,6 +4,24 @@
  */
 import { createTableDataset, createSpatialDataset } from '../core/data-model.js';
 import { AppError, ErrorCategory } from '../core/error-handler.js';
+import { dmsToDd } from '../tools/coordinates.js';
+
+/** Parse a coordinate value — handles DD numbers and DMS strings */
+function parseCoordValue(val) {
+    if (val == null || val === '') return NaN;
+    // If it's already a number, use it directly
+    if (typeof val === 'number' && isFinite(val)) return val;
+    const s = String(val).trim();
+    // Try plain float first
+    const n = parseFloat(s);
+    // If the string ONLY contains a valid number, use parseFloat result
+    if (!isNaN(n) && /^-?\d+\.?\d*$/.test(s)) return n;
+    // Otherwise try DMS parse (handles 40°26'46.3"N etc.)
+    const dms = dmsToDd(s);
+    if (dms != null && isFinite(dms)) return dms;
+    // Final fallback to parseFloat (handles "40.446" with trailing text)
+    return n;
+}
 
 export async function importCSV(file, task) {
     task.updateProgress(20, 'Loading PapaParse...');
@@ -50,8 +68,8 @@ export async function importCSV(file, task) {
                 if (coordInfo) {
                     // Auto-create spatial dataset from coordinates
                     const features = rows.map(row => {
-                        const lat = parseFloat(row[coordInfo.latField]);
-                        const lon = parseFloat(row[coordInfo.lonField]);
+                        const lat = parseCoordValue(row[coordInfo.latField]);
+                        const lon = parseCoordValue(row[coordInfo.lonField]);
                         const geom = (!isNaN(lat) && !isNaN(lon))
                             ? { type: 'Point', coordinates: [lon, lat] }
                             : null;
@@ -98,11 +116,11 @@ function detectCoordinateColumns(fields, rows) {
     }
 
     if (latField && lonField) {
-        // Verify at least some rows have numeric values
+        // Verify at least some rows have valid coordinate values (DD or DMS)
         const sample = rows.slice(0, 20);
         const validCount = sample.filter(r => {
-            const lat = parseFloat(r[latField]);
-            const lon = parseFloat(r[lonField]);
+            const lat = parseCoordValue(r[latField]);
+            const lon = parseCoordValue(r[lonField]);
             return !isNaN(lat) && !isNaN(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
         }).length;
         if (validCount >= sample.length * 0.5) {

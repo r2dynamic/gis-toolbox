@@ -2,7 +2,7 @@
 // GIS Toolbox — Service Worker
 // Bump CACHE_VERSION to push updates
 // ============================================
-const CACHE_VERSION = '1.19.10';
+const CACHE_VERSION = '1.19.11';
 const CACHE_NAME = `gis-toolbox-v${CACHE_VERSION}`;
 
 const APP_FILES = [
