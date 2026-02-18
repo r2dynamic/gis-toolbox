@@ -9,9 +9,9 @@ import {
     getState, getLayers, getActiveLayer, addLayer, removeLayer,
     setActiveLayer, toggleLayerVisibility, reorderLayer, setUIState, toggleAGOLCompat
 } from './core/state.js';
-import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, analyzeSchema, analyzeTableSchema } from './core/data-model.js';
+import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, analyzeSchema, analyzeTableSchema, splitByGeometryType } from './core/data-model.js';
 import { importFile, importFiles } from './import/importer.js';
-import { getAvailableFormats, exportDataset } from './export/exporter.js';
+import { getAvailableFormats, exportDataset, exportMultiLayerKMZFile, setExportMapManager } from './export/exporter.js';
 import mapManager from './map/map-manager.js';
 import { showToast, showErrorToast } from './ui/toast.js';
 import { showModal, confirm, showProgressModal } from './ui/modals.js';
@@ -23,7 +23,7 @@ import { arcgisImporter } from './arcgis/rest-importer.js';
 import ARCGIS_ENDPOINTS from './arcgis/endpoints.js';
 import { checkAGOLCompatibility, applyAGOLFixes } from './agol/compatibility.js';
 import * as gisTools from './tools/gis-tools.js';
-import * as coordUtils from './tools/coordinates.js';
+
 import drawManager from './map/draw-manager.js';
 import sessionStore from './core/session-store.js';
 import { SpatialAnalyzerWidget } from './widgets/spatial-analyzer.js';
@@ -187,6 +187,7 @@ function _timeAgo(ts) {
 function initMap() {
     try {
         mapManager.init('map-container');
+        setExportMapManager(mapManager); // Wire map styles into KML/KMZ export
     } catch (e) {
         logger.error('App', 'Map init failed', { error: e.message });
         showToast('Map failed to initialize. Some features may be limited.', 'warning');
@@ -285,21 +286,35 @@ async function handleFileImport(files, fenceBbox = null) {
         const { datasets, errors } = await importFiles(files);
         progress.close();
 
-        let totalFiltered = 0;
+        // Auto-split mixed-geometry datasets into separate layers
+        const expanded = [];
         for (const ds of datasets) {
+            if (ds.type === 'spatial' && ds.schema?.geometryType === 'Mixed') {
+                expanded.push(...splitByGeometryType(ds));
+            } else {
+                expanded.push(ds);
+            }
+        }
+
+        let totalFiltered = 0;
+        for (const ds of expanded) {
             if (fenceBbox) {
                 const before = ds.type === 'spatial' ? ds.geojson?.features?.length : 0;
                 filterDatasetByFence(ds, fenceBbox);
                 const after = ds.type === 'spatial' ? ds.geojson?.features?.length : 0;
                 totalFiltered += (before - after);
             }
+            // Apply KML-extracted style before first render
+            if (ds._kmlStyle && !mapManager.getLayerStyle(ds.id)) {
+                mapManager.setLayerStyle(ds.id, { ...ds._kmlStyle });
+            }
             addLayer(ds);
             mapManager.addLayer(ds, getLayers().indexOf(ds), { fit: true });
         }
 
-        if (datasets.length > 0) {
+        if (expanded.length > 0) {
             const fenceNote = fenceBbox && totalFiltered > 0 ? ` (${totalFiltered} features outside fence excluded)` : '';
-            showToast(`Imported ${datasets.length} layer(s)${fenceNote}`, 'success');
+            showToast(`Imported ${expanded.length} layer(s)${fenceNote}`, 'success');
             refreshUI();
         }
         if (errors.length > 0) {
@@ -352,9 +367,6 @@ function setupEventListeners() {
     // ArcGIS REST Import
     document.getElementById('btn-arcgis')?.addEventListener('click', openArcGISImporter);
     document.getElementById('btn-arcgis-mobile')?.addEventListener('click', openArcGISImporter);
-
-    // Coordinates
-    document.getElementById('btn-coordinates')?.addEventListener('click', openCoordinatesModal);
 
     // Draw Layer
     document.getElementById('btn-draw-layer')?.addEventListener('click', createDrawLayer);
@@ -417,7 +429,7 @@ function setupEventListeners() {
                 case 'import': document.getElementById('btn-import')?.click(); break;
                 case 'photos': openPhotoMapper(); break;
                 case 'arcgis': openArcGISImporter(); break;
-                case 'coords': openCoordinatesModal(); break;
+
                 case 'draw': createDrawLayer(); break;
                 case 'logs': toggleLogs(); break;
                 case 'info': showToolInfo(); break;
@@ -537,8 +549,10 @@ function renderLayerList() {
     if (layers.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:48px;height:48px;margin:0 auto 12px;opacity:0.5;">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5"/>
+                    <path d="M2 12l10 5 10-5"/>
                 </svg>
                 <p>No layers loaded. Import or drag and drop a file to start.</p>
             </div>`;
@@ -737,6 +751,7 @@ function buildStylePanel(layer) {
         pointSize: 6, pointSymbol: 'circle'
     };
     const geomTypes = _detectGeomTypes(layer);
+    const isMixed = geomTypes.size > 1;
     const hasPoints = geomTypes.has('point');
     const hasFills = geomTypes.has('polygon') || geomTypes.has('point');
     const hasLines = geomTypes.has('line') || geomTypes.has('polygon');
@@ -744,66 +759,70 @@ function buildStylePanel(layer) {
     const symbolOptions = ['circle', 'square', 'triangle', 'diamond', 'star', 'pin'];
     const symbolLabels = { circle: '●', square: '■', triangle: '▲', diamond: '◆', star: '★', pin: '📍' };
 
+    // Helper to build a style section (for single-type or per-type)
+    function buildSection(prefix, s, opts) {
+        const { showStroke = true, showFill = true, showWidth = true, showStrokeOp = true, showFillOp = true, showPoint = false } = opts;
+        let html = '';
+        if (showStroke) {
+            html += `<div class="style-row"><label>Stroke Color</label><input type="color" id="${prefix}-stroke-color" value="${s.strokeColor}" class="style-color-input"></div>`;
+        }
+        if (showFill) {
+            html += `<div class="style-row"><label>Fill Color</label><input type="color" id="${prefix}-fill-color" value="${s.fillColor || s.strokeColor}" class="style-color-input"></div>`;
+        }
+        if (showWidth) {
+            html += `<div class="style-row"><label>Stroke Width</label><input type="range" id="${prefix}-stroke-width" min="0.5" max="8" step="0.5" value="${s.strokeWidth ?? 2}" class="style-range"><span class="style-value" id="${prefix}-stroke-width-val">${s.strokeWidth ?? 2}</span></div>`;
+        }
+        if (showStrokeOp) {
+            html += `<div class="style-row"><label>Stroke Opacity</label><input type="range" id="${prefix}-stroke-opacity" min="0" max="1" step="0.05" value="${s.strokeOpacity ?? 0.8}" class="style-range"><span class="style-value" id="${prefix}-stroke-opacity-val">${Math.round((s.strokeOpacity ?? 0.8) * 100)}%</span></div>`;
+        }
+        if (showFillOp) {
+            html += `<div class="style-row"><label>Fill Opacity</label><input type="range" id="${prefix}-fill-opacity" min="0" max="1" step="0.05" value="${s.fillOpacity ?? 0.3}" class="style-range"><span class="style-value" id="${prefix}-fill-opacity-val">${Math.round((s.fillOpacity ?? 0.3) * 100)}%</span></div>`;
+        }
+        if (showPoint) {
+            html += `<div class="style-row"><label>Point Size</label><input type="range" id="${prefix}-point-size" min="3" max="20" step="1" value="${s.pointSize ?? 6}" class="style-range"><span class="style-value" id="${prefix}-point-size-val">${s.pointSize ?? 6}</span></div>`;
+            html += `<div class="style-row style-row-symbols"><label>Symbol</label><div class="style-symbols" id="${prefix}-point-symbol">${symbolOptions.map(sym =>
+                `<button class="style-symbol-btn ${(s.pointSymbol || 'circle') === sym ? 'active' : ''}" data-symbol="${sym}" title="${sym}">${symbolLabels[sym]}</button>`
+            ).join('')}</div></div>`;
+        }
+        return html;
+    }
+
+    let body;
+    if (isMixed) {
+        // Per-geometry-type sections
+        const ps = { ...sty, ...(sty.point || {}) };
+        const ls = { ...sty, ...(sty.line || {}) };
+        const gs = { ...sty, ...(sty.polygon || {}) };
+
+        body = '';
+        if (hasPoints) {
+            body += `<div class="style-type-section"><h4 class="style-type-header">⬤ Points</h4>${buildSection('sty-pt', ps, { showFill: true, showWidth: true, showStrokeOp: true, showFillOp: true, showPoint: true })}</div>`;
+        }
+        if (hasLines) {
+            body += `<div class="style-type-section"><h4 class="style-type-header">━ Lines</h4>${buildSection('sty-ln', ls, { showFill: false, showWidth: true, showStrokeOp: true, showFillOp: false, showPoint: false })}</div>`;
+        }
+        if (geomTypes.has('polygon')) {
+            body += `<div class="style-type-section"><h4 class="style-type-header">⬠ Polygons</h4>${buildSection('sty-pg', gs, { showFill: true, showWidth: true, showStrokeOp: true, showFillOp: true, showPoint: false })}</div>`;
+        }
+    } else {
+        // Single geometry type — flat panel (original layout)
+        body = buildSection('sty', sty, {
+            showStroke: true,
+            showFill: hasFills,
+            showWidth: hasLines || hasFills,
+            showStrokeOp: true,
+            showFillOp: hasFills,
+            showPoint: hasPoints
+        });
+    }
+
     return `
         <div class="panel-section style-panel">
             <div class="panel-section-header" onclick="toggleSection(this)">
                 Layer Style <span class="arrow">▼</span>
             </div>
             <div class="panel-section-body">
-                <!-- Stroke Color -->
-                <div class="style-row">
-                    <label>Stroke Color</label>
-                    <input type="color" id="sty-stroke-color" value="${sty.strokeColor}" class="style-color-input">
-                </div>
-
-                ${hasFills ? `
-                <!-- Fill Color -->
-                <div class="style-row">
-                    <label>Fill Color</label>
-                    <input type="color" id="sty-fill-color" value="${sty.fillColor}" class="style-color-input">
-                </div>` : ''}
-
-                <!-- Stroke Width -->
-                ${hasLines || hasFills ? `
-                <div class="style-row">
-                    <label>Stroke Width</label>
-                    <input type="range" id="sty-stroke-width" min="0.5" max="8" step="0.5" value="${sty.strokeWidth}" class="style-range">
-                    <span class="style-value" id="sty-stroke-width-val">${sty.strokeWidth}</span>
-                </div>` : ''}
-
-                <!-- Stroke Opacity -->
-                <div class="style-row">
-                    <label>Stroke Opacity</label>
-                    <input type="range" id="sty-stroke-opacity" min="0" max="1" step="0.05" value="${sty.strokeOpacity}" class="style-range">
-                    <span class="style-value" id="sty-stroke-opacity-val">${Math.round(sty.strokeOpacity * 100)}%</span>
-                </div>
-
-                ${hasFills ? `
-                <!-- Fill Opacity -->
-                <div class="style-row">
-                    <label>Fill Opacity</label>
-                    <input type="range" id="sty-fill-opacity" min="0" max="1" step="0.05" value="${sty.fillOpacity}" class="style-range">
-                    <span class="style-value" id="sty-fill-opacity-val">${Math.round(sty.fillOpacity * 100)}%</span>
-                </div>` : ''}
-
-                ${hasPoints ? `
-                <!-- Point Size -->
-                <div class="style-row">
-                    <label>Point Size</label>
-                    <input type="range" id="sty-point-size" min="3" max="20" step="1" value="${sty.pointSize}" class="style-range">
-                    <span class="style-value" id="sty-point-size-val">${sty.pointSize}</span>
-                </div>
-
-                <!-- Point Symbol -->
-                <div class="style-row style-row-symbols">
-                    <label>Symbol</label>
-                    <div class="style-symbols" id="sty-point-symbol">
-                        ${symbolOptions.map(s =>
-                            `<button class="style-symbol-btn ${sty.pointSymbol === s ? 'active' : ''}" data-symbol="${s}" title="${s}">${symbolLabels[s]}</button>`
-                        ).join('')}
-                    </div>
-                </div>` : ''}
-
+                ${body}
                 <button class="btn btn-sm btn-primary w-full mt-8" id="sty-apply">Apply Style</button>
             </div>
         </div>`;
@@ -813,40 +832,79 @@ function bindStylePanel(layer) {
     const applyBtn = document.getElementById('sty-apply');
     if (!applyBtn) return;
 
-    // Live value previews for range sliders
-    const rangeIds = [
-        ['sty-stroke-width', 'sty-stroke-width-val', v => v],
-        ['sty-stroke-opacity', 'sty-stroke-opacity-val', v => Math.round(v * 100) + '%'],
-        ['sty-fill-opacity', 'sty-fill-opacity-val', v => Math.round(v * 100) + '%'],
-        ['sty-point-size', 'sty-point-size-val', v => v]
-    ];
-    for (const [inputId, valId, fmt] of rangeIds) {
+    const geomTypes = _detectGeomTypes(layer);
+    const isMixed = geomTypes.size > 1;
+
+    // Wire live value previews for all range sliders in the style panel
+    const wireRange = (inputId, valId, fmt) => {
         const input = document.getElementById(inputId);
         const valEl = document.getElementById(valId);
         if (input && valEl) {
             input.addEventListener('input', () => { valEl.textContent = fmt(input.value); });
         }
+    };
+
+    const pctFmt = v => Math.round(v * 100) + '%';
+    const idFmt = v => v;
+
+    if (isMixed) {
+        // Per-type range sliders
+        for (const prefix of ['sty-pt', 'sty-ln', 'sty-pg']) {
+            wireRange(`${prefix}-stroke-width`, `${prefix}-stroke-width-val`, idFmt);
+            wireRange(`${prefix}-stroke-opacity`, `${prefix}-stroke-opacity-val`, pctFmt);
+            wireRange(`${prefix}-fill-opacity`, `${prefix}-fill-opacity-val`, pctFmt);
+            wireRange(`${prefix}-point-size`, `${prefix}-point-size-val`, idFmt);
+
+            // Symbol button selection
+            document.querySelectorAll(`#${prefix}-point-symbol .style-symbol-btn`).forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll(`#${prefix}-point-symbol .style-symbol-btn`).forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                });
+            });
+        }
+    } else {
+        wireRange('sty-stroke-width', 'sty-stroke-width-val', idFmt);
+        wireRange('sty-stroke-opacity', 'sty-stroke-opacity-val', pctFmt);
+        wireRange('sty-fill-opacity', 'sty-fill-opacity-val', pctFmt);
+        wireRange('sty-point-size', 'sty-point-size-val', idFmt);
+
+        // Symbol button selection
+        document.querySelectorAll('#sty-point-symbol .style-symbol-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#sty-point-symbol .style-symbol-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
     }
 
-    // Symbol button selection
-    document.querySelectorAll('#sty-point-symbol .style-symbol-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('#sty-point-symbol .style-symbol-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-        });
-    });
+    // Helper to read style values from a prefix group
+    const readSection = (prefix) => {
+        const v = (id, def) => document.getElementById(`${prefix}-${id}`)?.value ?? def;
+        return {
+            strokeColor: v('stroke-color', '#2563eb'),
+            fillColor: v('fill-color', null) || v('stroke-color', '#2563eb'),
+            strokeWidth: parseFloat(v('stroke-width', 2)),
+            strokeOpacity: parseFloat(v('stroke-opacity', 0.8)),
+            fillOpacity: parseFloat(v('fill-opacity', 0.3)),
+            pointSize: parseInt(v('point-size', 6)),
+            pointSymbol: document.querySelector(`#${prefix}-point-symbol .style-symbol-btn.active`)?.dataset.symbol || 'circle'
+        };
+    };
 
     // Apply
     applyBtn.addEventListener('click', () => {
-        const style = {
-            strokeColor: document.getElementById('sty-stroke-color')?.value || '#2563eb',
-            fillColor: document.getElementById('sty-fill-color')?.value || document.getElementById('sty-stroke-color')?.value || '#2563eb',
-            strokeWidth: parseFloat(document.getElementById('sty-stroke-width')?.value ?? 2),
-            strokeOpacity: parseFloat(document.getElementById('sty-stroke-opacity')?.value ?? 0.8),
-            fillOpacity: parseFloat(document.getElementById('sty-fill-opacity')?.value ?? 0.3),
-            pointSize: parseInt(document.getElementById('sty-point-size')?.value ?? 6),
-            pointSymbol: document.querySelector('#sty-point-symbol .style-symbol-btn.active')?.dataset.symbol || 'circle'
-        };
+        let style;
+        if (isMixed) {
+            // Start with current base, add per-type overrides
+            const cur = mapManager.getLayerStyle(layer.id) || {};
+            style = { ...cur };
+            if (geomTypes.has('point')) style.point = readSection('sty-pt');
+            if (geomTypes.has('line')) style.line = readSection('sty-ln');
+            if (geomTypes.has('polygon')) style.polygon = readSection('sty-pg');
+        } else {
+            style = readSection('sty');
+        }
         mapManager.restyleLayer(layer.id, layer, style);
         showToast('Style applied', 'success');
     });
@@ -901,7 +959,7 @@ function renderDataPrepTools() {
 
                 <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
                     <button id="btn-selection-toggle" class="btn-selection-toggle" onclick="window.app.toggleSelectionMode()" title="Toggle feature selection mode — click features to select them">✦ Select</button>
-                    <span style="font-size:10px;color:var(--text-muted);">Click features to select, Shift+click to multi-select</span>
+                    <span style="font-size:10px;color:var(--text-muted);">Click features to select, or Shift+click to multi-select</span>
                 </div>
                 <div id="selection-bar" class="selection-bar hidden"></div>
 
@@ -1106,7 +1164,6 @@ function mobileShowToolsModal() {
         { label: '🔗 Combine', action: 'openCombine' },
         { label: '⚠ Kinks', action: 'openKinks' },
         { label: '📊 NN Analysis', action: 'openNearestNeighborAnalysis' },
-        { label: '📍 Coordinates', action: 'openCoordinatesModal' },
     ];
     const html = `
     <div style="margin-bottom:10px;">
@@ -1343,6 +1400,118 @@ function mobileShowBasemapModal() {
             });
         }
     });
+}
+
+// ============================
+// Coordinate Search — add point from search marker
+// ============================
+function _coordSearchAddNew() {
+    const info = mapManager.getSearchLatLng();
+    if (!info) return showToast('No search marker active', 'warning');
+
+    const feature = {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [info.lng, info.lat] },
+        properties: {
+            name: 'Search Point',
+            latitude: info.lat.toFixed(6),
+            longitude: info.lng.toFixed(6),
+            source: info.inputText || ''
+        }
+    };
+
+    const ds = createSpatialDataset('Search Point', { type: 'FeatureCollection', features: [feature] });
+    addLayer(ds);
+    setActiveLayer(ds.id);
+    mapManager.addLayer(ds, getLayers().indexOf(ds), { fit: false });
+    refreshUI();
+    mapManager._clearSearchMarker();
+    showToast('Created new layer with search point', 'success');
+}
+
+function _coordSearchAddToExisting() {
+    const info = mapManager.getSearchLatLng();
+    if (!info) return showToast('No search marker active', 'warning');
+
+    const layers = getLayers().filter(l => l.type === 'spatial');
+    if (layers.length === 0) {
+        // No layers — fall back to creating new
+        _coordSearchAddNew();
+        return;
+    }
+
+    // Show a picker if multiple layers, or use the single / active one
+    const active = getActiveLayer();
+    if (layers.length === 1) {
+        _addSearchPointToLayer(layers[0], info);
+        return;
+    }
+
+    // Build a picker modal
+    const listHtml = layers.map(l => {
+        const isActive = active && l.id === active.id;
+        const count = l.geojson?.features?.length || 0;
+        return `<button class="coord-layer-pick-btn" data-id="${l.id}" style="
+            display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:1px solid var(--border);
+            border-radius:6px;background:${isActive ? 'rgba(37,99,235,0.12)' : 'var(--bg-surface)'};cursor:pointer;
+            color:var(--text);font-size:13px;text-align:left;
+        ">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.name}</span>
+            <span style="font-size:10px;color:var(--text-muted);">${count} features</span>
+            ${isActive ? '<span style="font-size:9px;color:var(--primary);">active</span>' : ''}
+        </button>`;
+    }).join('');
+
+    const html = `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+        Select a layer to add the search point to:
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto;">${listHtml}</div>`;
+
+    showModal('Add to Layer', html, {
+        width: '360px',
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close();
+            overlay.querySelectorAll('.coord-layer-pick-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const layer = getLayers().find(l => l.id === btn.dataset.id);
+                    if (layer) _addSearchPointToLayer(layer, info);
+                    close();
+                };
+            });
+        }
+    });
+}
+
+function _addSearchPointToLayer(layer, info) {
+    const feature = {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [info.lng, info.lat] },
+        properties: {
+            name: `Search Point ${(layer.geojson?.features?.length || 0) + 1}`,
+            latitude: info.lat.toFixed(6),
+            longitude: info.lng.toFixed(6),
+            source: info.inputText || ''
+        }
+    };
+
+    saveSnapshot(layer.id, 'Add search point', layer.geojson);
+    layer.geojson.features.push(feature);
+
+    import('./core/data-model.js').then(dm => {
+        layer.schema = dm.analyzeSchema(layer.geojson);
+        bus.emit('layer:updated', layer);
+        bus.emit('layers:changed', getLayers());
+        mapManager.addLayer(layer, getLayers().indexOf(layer));
+        refreshUI();
+    });
+
+    mapManager._clearSearchMarker();
+    showToast(`Point added to "${layer.name}"`, 'success');
+}
+
+function _coordSearchClear() {
+    mapManager._clearSearchMarker();
 }
 
 // ============================
@@ -1593,7 +1762,6 @@ function renderMobileToolsPanel() {
             <button class="btn btn-secondary btn-sm" onclick="window.app.openNearestNeighborAnalysis()">📊 NN Analysis</button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.openPhotoMapper()">📷 Photo Map</button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.openArcGISImporter()">🌐 ArcGIS REST</button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.openCoordinatesModal()">📍 Coordinates</button>
         </div>
         <h3 style="margin-top:10px;">Basemap</h3>
         <select id="basemap-select-mobile" style="width:100%;">
@@ -3599,104 +3767,35 @@ async function openArcGISImporter() {
 }
 
 // ============================
-// Coordinates modal
-// ============================
-async function openCoordinatesModal() {
-    const html = `
-        <div class="tabs mb-8">
-            <div class="tab active" data-ctab="convert">Convert</div>
-            <div class="tab" data-ctab="batch">Batch</div>
-        </div>
-
-        <div id="coord-convert">
-            <div class="form-group"><label>From format</label>
-                <select id="coord-from"><option value="dd">Decimal Degrees</option><option value="dms">DMS</option></select></div>
-            <div class="form-group"><label>Input</label>
-                <input type="text" id="coord-input" placeholder="40.446195, -79.948862"></div>
-            <button class="btn btn-primary btn-sm" id="coord-go">Convert</button>
-            <div id="coord-result" class="mt-8 text-mono" style="background:var(--bg);padding:8px;border-radius:4px;"></div>
-            <button class="btn btn-sm btn-ghost mt-8 hidden" id="coord-copy">📋 Copy</button>
-        </div>
-
-        <div id="coord-batch" class="hidden">
-            <div class="form-group"><label>Conversion</label>
-                <select id="batch-mode"><option value="dd-dms">DD → DMS</option><option value="dms-dd">DMS → DD</option></select></div>
-            <div class="form-group"><label>Paste coordinates (one per line)</label>
-                <textarea id="batch-input" rows="6" placeholder="40.446195, -79.948862"></textarea></div>
-            <button class="btn btn-primary btn-sm" id="batch-go">Convert All</button>
-            <div class="form-group mt-8"><label>Results</label>
-                <textarea id="batch-output" rows="6" readonly></textarea></div>
-            <button class="btn btn-sm btn-ghost" id="batch-copy">📋 Copy All</button>
-        </div>`;
-
-    showModal('Coordinates', html, {
-        onMount: (overlay) => {
-            // Tab switching
-            overlay.querySelectorAll('.tab').forEach(tab => {
-                tab.onclick = () => {
-                    overlay.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                    tab.classList.add('active');
-                    overlay.querySelector('#coord-convert').classList.toggle('hidden', tab.dataset.ctab !== 'convert');
-                    overlay.querySelector('#coord-batch').classList.toggle('hidden', tab.dataset.ctab !== 'batch');
-                };
-            });
-
-            // Convert
-            overlay.querySelector('#coord-go').onclick = () => {
-                const from = overlay.querySelector('#coord-from').value;
-                const input = overlay.querySelector('#coord-input').value.trim();
-                const resultEl = overlay.querySelector('#coord-result');
-                const copyBtn = overlay.querySelector('#coord-copy');
-
-                try {
-                    if (from === 'dd') {
-                        const parts = input.split(',').map(s => parseFloat(s.trim()));
-                        if (parts.length < 2 || parts.some(isNaN)) throw new Error('Invalid DD input');
-                        const dmsLat = coordUtils.ddToDms(parts[0], false);
-                        const dmsLon = coordUtils.ddToDms(parts[1], true);
-                        resultEl.textContent = `${dmsLat}, ${dmsLon}`;
-                    } else {
-                        const parts = input.split(',');
-                        const lat = coordUtils.dmsToDd(parts[0]?.trim());
-                        const lon = coordUtils.dmsToDd(parts[1]?.trim());
-                        if (lat == null || lon == null) throw new Error('Invalid DMS input');
-                        resultEl.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-                    }
-                    copyBtn.classList.remove('hidden');
-                } catch (e) {
-                    resultEl.textContent = 'Error: ' + e.message;
-                }
-            };
-
-            overlay.querySelector('#coord-copy').onclick = () => {
-                navigator.clipboard?.writeText(overlay.querySelector('#coord-result').textContent);
-                showToast('Copied!', 'success', { duration: 1500 });
-            };
-
-            // Batch
-            overlay.querySelector('#batch-go').onclick = () => {
-                const mode = overlay.querySelector('#batch-mode').value;
-                const text = overlay.querySelector('#batch-input').value;
-                const [from, to] = mode.split('-');
-                const results = coordUtils.batchConvert(text, from, to);
-                overlay.querySelector('#batch-output').value = results.map(r => r.output || r.error).join('\n');
-            };
-
-            overlay.querySelector('#batch-copy').onclick = () => {
-                const text = overlay.querySelector('#batch-output').value;
-                navigator.clipboard?.writeText(text);
-                showToast('Copied!', 'success', { duration: 1500 });
-            };
-        }
-    });
-}
-
-// ============================
 // Export handler
 // ============================
 async function doExport(format) {
     const layer = getActiveLayer();
     if (!layer) return showToast('No active layer', 'warning');
+
+    // KML/KMZ with 2+ layers: offer multi-layer export
+    const allLayers = getLayers().filter(l => l.type === 'spatial');
+    if ((format === 'kmz' || format === 'kml') && allLayers.length >= 2) {
+        const choice = await _showKmzExportPicker(allLayers, layer, format);
+        if (choice === null) return; // cancelled
+        if (choice === 'active') {
+            // fall through to single-layer export below
+        } else if (Array.isArray(choice)) {
+            // Multi-layer export
+            try {
+                const layerData = choice.map(ds => ({
+                    dataset: ds,
+                    style: mapManager.getLayerStyle(ds.id) || {}
+                }));
+                const fname = choice.length === allLayers.length ? 'All_Layers' : choice.map(l => l.name).join('_').slice(0, 60);
+                await exportMultiLayerKMZFile(layerData, { filename: fname });
+                showToast(`Exported ${choice.length} layers as KMZ`, 'success');
+            } catch (e) {
+                showErrorToast(handleError(e, 'Export', 'multi-kmz'));
+            }
+            return;
+        }
+    }
 
     const state = getState();
     let ds = layer;
@@ -3711,6 +3810,44 @@ async function doExport(format) {
     } catch (e) {
         showErrorToast(handleError(e, 'Export', format));
     }
+}
+
+/**
+ * Show KMZ/KML export picker: active layer only, or select multiple layers for folders.
+ * Returns 'active', array of selected datasets, or null (cancelled).
+ */
+async function _showKmzExportPicker(allLayers, activeLayer, format) {
+    const fmtLabel = format.toUpperCase();
+    const checkboxes = allLayers.map((l, i) => {
+        const featCount = l.geojson?.features?.length || 0;
+        const safeName = l.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const isActive = l.id === activeLayer.id;
+        return `<label class="merge-layer-item">
+            <input type="checkbox" value="${i}" checked>
+            <span>${safeName}${isActive ? ' <small style="color:var(--primary)">(active)</small>' : ''}</span>
+            <span class="merge-feat-count">${featCount}</span>
+        </label>`;
+    }).join('');
+
+    const html = `
+        <p style="margin-bottom:12px;">Export <strong>${activeLayer.name}</strong> only, or select layers to combine into a single ${fmtLabel} with a folder per layer.</p>
+        <div class="merge-layer-list" id="kmz-layer-list">${checkboxes}</div>`;
+
+    return showModal(`Export ${fmtLabel}`, html, {
+        footer: `<button class="btn btn-secondary cancel-btn">Cancel</button>
+                 <button class="btn btn-secondary active-only-btn">Active Layer Only</button>
+                 <button class="btn btn-primary multi-btn">Export Selected as Folders</button>`,
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close(null);
+            overlay.querySelector('.active-only-btn').onclick = () => close('active');
+            overlay.querySelector('.multi-btn').onclick = () => {
+                const checked = [...overlay.querySelectorAll('#kmz-layer-list input:checked')]
+                    .map(cb => allLayers[parseInt(cb.value)]);
+                if (checked.length === 0) { showToast('Select at least 1 layer', 'warning'); return; }
+                close(checked);
+            };
+        }
+    });
 }
 
 // ============================
@@ -3782,12 +3919,42 @@ function openDrawTools(layerId) {
 async function handleMergeLayers() {
     const layers = getLayers();
     if (layers.length < 2) return showToast('Need at least 2 layers to merge', 'warning');
-    const ok = await confirm('Merge Layers', `Merge all ${layers.length} layers into one? A source_file field will be added.`);
-    if (!ok) return;
-    const merged = mergeDatasets(layers);
+
+    const checkboxes = layers.map((l, i) => {
+        const featCount = l.type === 'spatial' ? (l.geojson?.features?.length || 0) : (l.rows?.length || 0);
+        const safeName = l.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return `<label class="merge-layer-item">
+            <input type="checkbox" value="${i}" checked>
+            <span>${safeName}</span>
+            <span class="merge-feat-count">${featCount} features</span>
+        </label>`;
+    }).join('');
+
+    const html = `<p style="margin-bottom:8px;">Select layers to merge. A <code>source_file</code> field will be added.</p>
+        <div class="merge-layer-list">${checkboxes}</div>`;
+
+    const result = await showModal('Merge Layers', html, {
+        footer: '<button class="btn btn-secondary cancel-btn">Cancel</button> <button class="btn btn-primary confirm-btn">Merge Selected</button>',
+        onMount: (overlay, close) => {
+            overlay.querySelector('.cancel-btn').onclick = () => close(null);
+            overlay.querySelector('.confirm-btn').onclick = () => {
+                const checked = [...overlay.querySelectorAll('.merge-layer-list input:checked')]
+                    .map(cb => parseInt(cb.value));
+                close(checked);
+            };
+        }
+    });
+
+    if (!result || result.length < 2) {
+        if (result && result.length === 1) showToast('Select at least 2 layers to merge', 'warning');
+        return;
+    }
+
+    const selected = result.map(i => layers[i]);
+    const merged = mergeDatasets(selected);
     addLayer(merged);
     mapManager.addLayer(merged, getLayers().indexOf(merged), { fit: true });
-    showToast(`Merged ${layers.length} layers → ${merged.geojson.features.length} features`, 'success');
+    showToast(`Merged ${selected.length} layers → ${merged.geojson.features.length} features`, 'success');
     refreshUI();
 }
 
@@ -3836,9 +4003,42 @@ function openFeatureEditor(layerId, featureIndex) {
 
     const props = feature.properties || {};
     const fields = Object.keys(props).filter(k => !k.startsWith('_'));
+    const schemaFields = layer.schema?.fields || [];
+    const getFieldType = (name) => schemaFields.find(f => f.name === name)?.type || 'string';
+
+    const _formatFileSize = (bytes) => {
+        if (!bytes) return '';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    };
 
     const rowsHtml = fields.map(f => {
+        const fieldType = getFieldType(f);
         let val = props[f];
+        const isAtt = fieldType === 'attachment' || (val && typeof val === 'object' && val._att);
+
+        if (isAtt) {
+            const att = (val && val._att) ? val : null;
+            const isImage = att?.type?.startsWith('image/');
+            const previewHtml = att ? `
+                <div class="att-preview-row" data-field="${f}" style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+                    ${isImage && att.dataUrl ? `<img src="${att.dataUrl}" style="max-width:60px;max-height:60px;border-radius:4px;border:1px solid var(--border);">` : '<span style="font-size:20px;">📎</span>'}
+                    <span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${att.name}">${att.name}</span>
+                    <span style="font-size:10px;color:var(--text-muted);">${_formatFileSize(att.size)}</span>
+                    <button class="att-remove-btn btn btn-sm" data-field="${f}" style="font-size:10px;padding:2px 6px;color:var(--error);" title="Remove">✕</button>
+                </div>` : '';
+            return `<div class="form-group" style="margin-bottom:6px;">
+                <label style="font-size:11px;color:var(--text-muted);">${f} <span style="opacity:0.6;font-size:9px;">(photo)</span></label>
+                ${previewHtml}
+                <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-surface);border:1px dashed var(--border);border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-muted);margin-top:2px;">
+                    📷 ${att ? 'Replace Photo' : 'Choose Photo'}
+                    <input type="file" class="feat-edit-file" data-field="${f}" accept="image/*" style="display:none;">
+                </label>
+                <span class="att-size-note" style="font-size:10px;color:var(--text-muted);margin-left:6px;">Max 10 MB · KML/KMZ only</span>
+            </div>`;
+        }
+
         if (val != null && typeof val === 'object') val = JSON.stringify(val);
         return `<div class="form-group" style="margin-bottom:6px;">
             <label style="font-size:11px;color:var(--text-muted);">${f}</label>
@@ -3860,12 +4060,74 @@ function openFeatureEditor(layerId, featureIndex) {
             // Focus first input
             setTimeout(() => overlay.querySelector('.feat-edit-input')?.focus(), 50);
 
+            // Track attachment changes during editing
+            const attachmentUpdates = new Map();
+
+            // Handle file inputs for photo attachment fields
+            overlay.querySelectorAll('.feat-edit-file').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    if (!file.type.startsWith('image/')) {
+                        showToast('Only image files are supported', 'warning');
+                        input.value = '';
+                        return;
+                    }
+                    if (file.size > 10 * 1024 * 1024) {
+                        showToast('Photo too large — max 10 MB', 'warning');
+                        input.value = '';
+                        return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const field = input.dataset.field;
+                        const attObj = { _att: true, name: file.name, dataUrl: reader.result, type: file.type, size: file.size };
+                        attachmentUpdates.set(field, attObj);
+                        // Update preview in-place
+                        const isImage = file.type.startsWith('image/');
+                        let previewRow = overlay.querySelector(`.att-preview-row[data-field="${field}"]`);
+                        const formGroup = input.closest('.form-group');
+                        if (!previewRow) {
+                            previewRow = document.createElement('div');
+                            previewRow.className = 'att-preview-row';
+                            previewRow.dataset.field = field;
+                            previewRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;';
+                            formGroup.insertBefore(previewRow, formGroup.querySelector('label:last-of-type'));
+                        }
+                        const fmtSize = file.size < 1024 ? file.size + ' B' : file.size < 1048576 ? (file.size / 1024).toFixed(1) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB';
+                        previewRow.innerHTML = `
+                            ${isImage ? `<img src="${reader.result}" style="max-width:60px;max-height:60px;border-radius:4px;border:1px solid var(--border);">` : '<span style="font-size:20px;">📎</span>'}
+                            <span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${file.name}">${file.name}</span>
+                            <span style="font-size:10px;color:var(--text-muted);">${fmtSize}</span>
+                            <button class="att-remove-btn btn btn-sm" data-field="${field}" style="font-size:10px;padding:2px 6px;color:var(--error);" title="Remove">✕</button>`;
+                        // Bind remove on the new button
+                        previewRow.querySelector('.att-remove-btn').addEventListener('click', (ev) => {
+                            ev.preventDefault();
+                            attachmentUpdates.set(field, null);
+                            previewRow.remove();
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                });
+            });
+
+            // Handle remove buttons (for existing attachments)
+            overlay.querySelectorAll('.att-remove-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const field = btn.dataset.field;
+                    attachmentUpdates.set(field, null);
+                    const previewRow = overlay.querySelector(`.att-preview-row[data-field="${field}"]`);
+                    if (previewRow) previewRow.remove();
+                });
+            });
+
             overlay.querySelector('.cancel-btn').onclick = () => close();
             overlay.querySelector('.apply-btn').onclick = () => {
                 // Save snapshot before editing
                 saveSnapshot(layer.id, 'Edit Feature', layer.geojson);
 
-                // Read all inputs and update properties
+                // Read all text inputs and update properties
                 overlay.querySelectorAll('.feat-edit-input').forEach(input => {
                     const field = input.dataset.field;
                     const newVal = input.value;
@@ -3882,6 +4144,11 @@ function openFeatureEditor(layerId, featureIndex) {
                         props[field] = newVal;
                     }
                 });
+
+                // Apply attachment updates
+                for (const [field, data] of attachmentUpdates) {
+                    props[field] = data; // null removes, object sets
+                }
 
                 // Refresh map and UI
                 import('./core/data-model.js').then(dm => {
@@ -3918,6 +4185,11 @@ function showDataTable() {
         const props = isSpatial ? (item.properties || {}) : item;
         const cells = fields.map(f => {
             let val = props[f];
+            // Attachment cells: show filename, non-editable
+            if (val && typeof val === 'object' && val._att) {
+                const icon = val.type?.startsWith('image/') ? '🖼️' : '📎';
+                return `<td data-row="${i}" data-field="${f}" class="att-cell" style="cursor:default;color:var(--text-muted);font-style:italic;" title="${val.name || 'attachment'}">${icon} ${val.name || 'attachment'}</td>`;
+            }
             if (val != null && typeof val === 'object') val = JSON.stringify(val);
             return `<td contenteditable="true" data-row="${i}" data-field="${f}">${val ?? ''}</td>`;
         }).join('');
@@ -4120,8 +4392,9 @@ function addField() {
                 <option value="number">Number</option>
                 <option value="boolean">Boolean</option>
                 <option value="date">Date</option>
+                <option value="attachment">Attach Photo (KML/KMZ export only)</option>
             </select></div>
-        <div class="form-group"><label>Default Value <span class="text-muted text-xs">(optional)</span></label>
+        <div class="form-group" id="af-default-group"><label>Default Value <span class="text-muted text-xs">(optional)</span></label>
             <input type="text" id="af-default" placeholder="Leave blank for empty"></div>
         <div id="af-error" class="text-xs" style="color:var(--error);min-height:18px;"></div>`;
 
@@ -4131,7 +4404,14 @@ function addField() {
             const nameInput = overlay.querySelector('#af-name');
             const typeSelect = overlay.querySelector('#af-type');
             const defaultInput = overlay.querySelector('#af-default');
+            const defaultGroup = overlay.querySelector('#af-default-group');
             const errorEl = overlay.querySelector('#af-error');
+
+            // Hide default value for attachment type
+            typeSelect.addEventListener('change', () => {
+                defaultGroup.style.display = typeSelect.value === 'attachment' ? 'none' : '';
+                if (typeSelect.value === 'attachment') defaultInput.value = '';
+            });
 
             overlay.querySelector('.cancel-btn').onclick = () => close();
             overlay.querySelector('.apply-btn').onclick = () => {
@@ -4145,7 +4425,9 @@ function addField() {
 
                 // Coerce default value to selected type
                 let defaultValue = rawDefault === '' ? null : rawDefault;
-                if (defaultValue !== null) {
+                if (type === 'attachment') {
+                    defaultValue = null; // Attachments have no default
+                } else if (defaultValue !== null) {
                     if (type === 'number') {
                         defaultValue = Number(rawDefault);
                         if (isNaN(defaultValue)) { errorEl.textContent = 'Default value is not a valid number'; defaultInput.focus(); return; }
@@ -4266,8 +4548,7 @@ function showToolInfo() {
             tools: [
                 ['📂 Import', 'Drag-and-drop or browse to load GeoJSON, CSV, Excel, KML, KMZ, Shapefile (ZIP), or JSON files.'],
                 ['📷 Photos', 'Import geotagged photos. Extracts GPS coordinates and EXIF data, maps them as points.'],
-                ['🌐 ArcGIS REST', 'Import features directly from an ArcGIS REST service URL (Feature/Map Server).'],
-                ['📍 Coordinates', 'Convert coordinates between formats — Decimal Degrees, DMS, UTM, and MGRS.']
+                ['🌐 ArcGIS REST', 'Import features directly from an ArcGIS REST service URL (Feature/Map Server).']
             ]
         },
         {
@@ -4275,8 +4556,9 @@ function showToolInfo() {
             tools: [
                 ['Layers Panel', 'View, select, toggle visibility, zoom to, rename, or remove imported layers.'],
                 ['Fields Panel', 'View, search, select/deselect, rename, or add new fields on the active layer.'],
+                ['Field Types', 'Text, Number, Boolean, Date, and Attach Photo. Photo fields let you attach images to individual features with inline previews. Photos are embedded when exported as KML/KMZ only.'],
                 ['Feature Selection', 'Click the ✦ Select button to enter selection mode. Click features to select them (cyan highlight). Shift+click to add/remove. Ctrl+drag to box-select. Tools operate on selected features when a selection exists, or all features when nothing is selected.'],
-                ['Merge Layers', 'Combine all loaded layers into a single layer with a source_file field.'],
+                ['Merge Layers', 'Select which layers to combine into a single layer. A source_file field is added so you can tell which features came from which original layer. Useful for exporting multiple layers into one KMZ with folders.'],
                 ['Data Table', 'View the raw attribute table for the active layer.']
             ]
         },
@@ -4348,8 +4630,8 @@ function showToolInfo() {
                 ['GeoJSON', 'Export spatial data as a .geojson file.'],
                 ['CSV', 'Export attributes as a comma-separated .csv file.'],
                 ['Excel', 'Export attributes as an .xlsx spreadsheet.'],
-                ['KML', 'Export spatial data as a .kml file (Google Earth).'],
-                ['KMZ', 'Export as .kmz (compressed KML), can include embedded photos.'],
+                ['KML', 'Export spatial data as a .kml file (Google Earth). Layer styles are preserved.'],
+                ['KMZ', 'Export as .kmz (compressed KML) with styles. When 2+ layers exist, choose to export just the active layer or select multiple layers — each becomes its own folder in the KMZ with its own styling. Can also include embedded photos.'],
                 ['JSON', 'Export raw data as a .json file.'],
                 ['Shapefile', 'Export spatial data as a zipped Shapefile (.shp).']
             ]
@@ -4361,6 +4643,14 @@ function showToolInfo() {
                 ['Preset Layers', 'Choose from a curated list of UDOT and Utah layers including Routes ALRS, Reference Posts, Mile Points, Region Boundaries, Bridge Locations, Lanes, County Boundaries, and Municipal Boundaries.'],
                 ['Custom URL', 'Enter any public ArcGIS REST FeatureServer or MapServer layer URL to import features directly.'],
                 ['Supported', 'Works with Feature Servers, Map Servers, and individual layer endpoints. Handles paginated services that return features in batches automatically.']
+            ]
+        },
+        {
+            title: 'Workflows',
+            tools: [
+                ['Multi-Layer KMZ', 'Import your layers, style each one independently, then Export → KMZ. A picker lets you select which layers to include — each becomes its own folder in the KMZ with its own styling. No merge needed.'],
+                ['Merge → Export', 'Use Merge Layers to combine selected layers into one. The merged layer gets a source_file field tracking each feature\'s origin. When exported as KML/KMZ, features are auto-grouped into folders by source layer name.'],
+                ['Mixed Geometry', 'When you import a file with mixed geometry types (points + lines + polygons), they are automatically split into separate layers so you can style each type independently.']
             ]
         },
         {
@@ -4606,7 +4896,6 @@ window.app = {
     openPointsWithinPolygon,
     openPhotoMapper: openPhotoMapper,
     openArcGISImporter: openArcGISImporter,
-    openCoordinatesModal: openCoordinatesModal,
     startImportFence,
     openSpatialAnalyzer,
     openBulkUpdate,
@@ -4621,7 +4910,10 @@ window.app = {
     deleteSelectedFeatures,
     openFeatureEditor,
     openDrawTools,
-    createDrawLayer
+    createDrawLayer,
+    _coordSearchAddNew,
+    _coordSearchAddToExisting,
+    _coordSearchClear
 };
 
 // Subscribe to logs for panel updates

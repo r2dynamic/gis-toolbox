@@ -14,7 +14,11 @@ const ARCGIS_ENDPOINTS = [
         url: 'https://services.arcgis.com/pA2nEVnB6tquxgOW/ArcGIS/rest/services/UDOT_Routes_ALRS/FeatureServer/0'
     },
     {
-        name: 'Linear Measure (LM) Tenth Open Data',
+        name: 'Linear Measure (LM) Mile Milepost',
+        url: 'https://roads.udot.utah.gov/server/rest/services/Public/Mile_Point_Measures_Open_Data/MapServer/0'
+    },
+    {
+        name: 'Linear Measure (LM) Tenth Milepost',
         url: 'https://roads.udot.utah.gov/server/rest/services/Public/Mile_Point_Tenth_Measures_Open_Data/MapServer/0'
     },
     {
@@ -30,12 +34,8 @@ const ARCGIS_ENDPOINTS = [
         url: 'https://central.udot.utah.gov/central/rest/services/UDOT/UDOT_Regions/MapServer/1'
     },
     {
-        name: 'UDOT Bridge and Structure Locations',
-        url: 'https://central.udot.utah.gov/central/rest/services/UDOT/UDOT_Structures_Open_Data/MapServer/10'
-    },
-    {
         name: 'UDOT Lanes (2021)',
-        url: 'https://services.arcgis.com/pA2nEVnB6tquxgOW/arcgis/rest/services/Lanes/FeatureServer'
+        url: 'https://services.arcgis.com/pA2nEVnB6tquxgOW/arcgis/rest/services/Lanes/FeatureServer/0'
     },
     {
         name: 'Utah County Boundaries',
@@ -46,7 +46,7 @@ const ARCGIS_ENDPOINTS = [
         url: 'https://services1.arcgis.com/99lidPhWCzftIe9K/ArcGIS/rest/services/UtahMunicipalBoundaries/FeatureServer/0'
     },
     {
-        name: 'Utah Roads (UGRC)',
+        name: 'Utah Roads* (UGRC) *The file will be too big to import without a Fence.',
         url: 'https://services1.arcgis.com/99lidPhWCzftIe9K/ArcGIS/rest/services/UtahRoads/FeatureServer/0'
     }
 ];

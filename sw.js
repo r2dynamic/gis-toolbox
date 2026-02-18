@@ -2,7 +2,7 @@
 // GIS Toolbox — Service Worker
 // Bump CACHE_VERSION to push updates
 // ============================================
-const CACHE_VERSION = '1.17.15';
+const CACHE_VERSION = '1.19.4';
 const CACHE_NAME = `gis-toolbox-v${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -67,7 +67,6 @@ const APP_FILES = [
     './js/dataprep/transforms.js',
 
     // Tools
-    './js/tools/coordinates.js',
     './js/tools/gis-tools.js',
 
     // Widgets

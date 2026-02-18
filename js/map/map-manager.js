@@ -170,6 +170,10 @@ class MapManager {
 
         logger.info('Map', 'Map initialized');
         bus.emit('map:ready', this.map);
+
+        // Add coordinate search control
+        this._initCoordSearch();
+
         return this.map;
     }
 
@@ -257,37 +261,46 @@ class MapManager {
         }
 
         const geojsonLayer = L.geoJSON({ type: 'FeatureCollection', features }, {
-            style: (feature) => ({
-                color: sty.strokeColor,
-                weight: sty.strokeWidth,
-                opacity: sty.strokeOpacity,
-                fillColor: sty.fillColor,
-                fillOpacity: sty.fillOpacity
-            }),
+            style: (feature) => {
+                const gt = feature.geometry?.type;
+                let s = sty;
+                if (gt === 'Point' || gt === 'MultiPoint') s = { ...sty, ...(sty.point || {}) };
+                else if (gt === 'LineString' || gt === 'MultiLineString') s = { ...sty, ...(sty.line || {}) };
+                else if (gt === 'Polygon' || gt === 'MultiPolygon') s = { ...sty, ...(sty.polygon || {}) };
+                return {
+                    color: s.strokeColor,
+                    weight: s.strokeWidth,
+                    opacity: s.strokeOpacity,
+                    fillColor: s.fillColor,
+                    fillOpacity: s.fillOpacity
+                };
+            },
             pointToLayer: (feature, latlng) => {
-                const sym = sty.pointSymbol || 'circle';
+                const ps = { ...sty, ...(sty.point || {}) };
+                const sym = ps.pointSymbol || 'circle';
+                const fo = Math.min(1, ps.fillOpacity + 0.3);
                 if (sym === 'circle') {
                     return L.circleMarker(latlng, {
-                        radius: sty.pointSize,
-                        fillColor: sty.fillColor,
-                        color: sty.strokeColor,
-                        weight: sty.strokeWidth,
-                        opacity: sty.strokeOpacity,
-                        fillOpacity: sty.fillOpacity + 0.3 > 1 ? 1 : sty.fillOpacity + 0.3
+                        radius: ps.pointSize,
+                        fillColor: ps.fillColor,
+                        color: ps.strokeColor,
+                        weight: ps.strokeWidth,
+                        opacity: ps.strokeOpacity,
+                        fillOpacity: fo
                     });
                 }
                 const factory = POINT_SYMBOLS[sym];
                 if (factory) {
-                    return L.marker(latlng, { icon: factory(sty.strokeColor, sty.fillColor, sty.pointSize, sty.fillOpacity + 0.3 > 1 ? 1 : sty.fillOpacity + 0.3) });
+                    return L.marker(latlng, { icon: factory(ps.strokeColor, ps.fillColor, ps.pointSize, fo) });
                 }
                 // Fallback to circle
                 return L.circleMarker(latlng, {
-                    radius: sty.pointSize,
-                    fillColor: sty.fillColor,
-                    color: sty.strokeColor,
-                    weight: sty.strokeWidth,
-                    opacity: sty.strokeOpacity,
-                    fillOpacity: sty.fillOpacity + 0.3 > 1 ? 1 : sty.fillOpacity + 0.3
+                    radius: ps.pointSize,
+                    fillColor: ps.fillColor,
+                    color: ps.strokeColor,
+                    weight: ps.strokeWidth,
+                    opacity: ps.strokeOpacity,
+                    fillOpacity: fo
                 });
             },
             onEachFeature: (feature, layer) => {
@@ -441,6 +454,13 @@ class MapManager {
         const rows = Object.entries(props)
             .filter(([k, v]) => v != null && !k.startsWith('_'))
             .map(([k, v]) => {
+                // Render attached photos inline
+                if (v && typeof v === 'object' && v._att && v.dataUrl) {
+                    return `<tr><th>${k}</th><td style="padding:4px 0;">
+                        <img src="${v.dataUrl}" style="max-width:240px;max-height:180px;border-radius:4px;display:block;margin-bottom:2px;" />
+                        <span style="font-size:10px;color:#888;">${v.name || 'photo'}</span>
+                    </td></tr>`;
+                }
                 let val = v;
                 if (typeof v === 'object') val = JSON.stringify(v);
                 if (typeof val === 'string' && val.length > 100) val = val.slice(0, 100) + '…';
@@ -1073,7 +1093,7 @@ class MapManager {
         this._selectionMode = true;
         this.map.getContainer().style.cursor = 'pointer';
         const banner = this._showInteractionBanner(
-            'Selection mode — click features (Shift+click to add). Draw rectangle to box-select.',
+            'Selection mode — click features or draw a box to miltiselect (Shift+click then drag).',
             () => this.exitSelectionMode()
         );
         this._selectionBanner = banner;
@@ -1376,6 +1396,206 @@ class MapManager {
             this.map = null;
         }
         this.dataLayers.clear();
+    }
+
+    // ============================
+    // Coordinate Search Control
+    // ============================
+    _initCoordSearch() {
+        this._searchMarker = null;
+        this._searchLatLng = null;
+
+        const SearchControl = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: () => {
+                const container = L.DomUtil.create('div', 'leaflet-bar coord-search-control');
+                L.DomEvent.disableClickPropagation(container);
+                L.DomEvent.disableScrollPropagation(container);
+
+                // Toggle button
+                const btn = L.DomUtil.create('a', 'coord-search-toggle', container);
+                btn.href = '#';
+                btn.title = 'Search Coordinates';
+                btn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+
+                // Expandable input area
+                const panel = L.DomUtil.create('div', 'coord-search-panel', container);
+                panel.style.display = 'none';
+
+                const input = L.DomUtil.create('input', 'coord-search-input', panel);
+                input.type = 'text';
+                input.placeholder = 'Enter coordinates…';
+                input.autocomplete = 'off';
+
+                const goBtn = L.DomUtil.create('button', 'coord-search-go', panel);
+                goBtn.innerHTML = '→';
+                goBtn.title = 'Search';
+
+                const clearBtn = L.DomUtil.create('button', 'coord-search-clear', panel);
+                clearBtn.innerHTML = '✕';
+                clearBtn.title = 'Clear & close';
+                clearBtn.style.display = 'none';
+
+                btn.onclick = (e) => {
+                    e.preventDefault();
+                    const open = panel.style.display !== 'none';
+                    panel.style.display = open ? 'none' : 'flex';
+                    if (!open) setTimeout(() => input.focus(), 50);
+                };
+
+                const doSearch = () => {
+                    const val = input.value.trim();
+                    if (!val) return;
+                    const result = this._parseCoordinates(val);
+                    if (result) {
+                        this._placeSearchMarker(result.lat, result.lng, val, result.format);
+                        clearBtn.style.display = '';
+                        input.blur();
+                    } else {
+                        input.style.outline = '2px solid #e74c3c';
+                        setTimeout(() => input.style.outline = '', 1200);
+                    }
+                };
+
+                goBtn.onclick = doSearch;
+                input.onkeydown = (e) => {
+                    if (e.key === 'Enter') doSearch();
+                    if (e.key === 'Escape') {
+                        panel.style.display = 'none';
+                    }
+                };
+
+                clearBtn.onclick = () => {
+                    this._clearSearchMarker();
+                    input.value = '';
+                    clearBtn.style.display = 'none';
+                    panel.style.display = 'none';
+                };
+
+                return container;
+            }
+        });
+
+        new SearchControl().addTo(this.map);
+    }
+
+    /**
+     * Parse coordinates in many common formats.
+     * Returns { lat, lng, format } or null.
+     */
+    _parseCoordinates(input) {
+        const s = input.trim();
+
+        // 1) Decimal Degrees: "40.446195, -79.948862" or "40.446195 -79.948862"
+        const ddMatch = s.match(/^([+-]?\d+\.?\d*)[,\s]+([+-]?\d+\.?\d*)$/);
+        if (ddMatch) {
+            const a = parseFloat(ddMatch[1]), b = parseFloat(ddMatch[2]);
+            if (Math.abs(a) <= 90 && Math.abs(b) <= 180) return { lat: a, lng: b, format: 'DD' };
+            if (Math.abs(b) <= 90 && Math.abs(a) <= 180) return { lat: b, lng: a, format: 'DD' };
+        }
+
+        // 2) DMS: 40°26'46.3"N 79°56'55.5"W  or  40° 26' 46.3" N, 79° 56' 55.5" W
+        const dmsRegex = /(\d+)[°]\s*(\d+)[′']\s*(\d+\.?\d*)[″"]\s*([NSEW])/gi;
+        const dmsMatches = [...s.matchAll(dmsRegex)];
+        if (dmsMatches.length >= 2) {
+            const parse = (m) => {
+                let dd = parseInt(m[1]) + parseInt(m[2]) / 60 + parseFloat(m[3]) / 3600;
+                if (m[4].toUpperCase() === 'S' || m[4].toUpperCase() === 'W') dd = -dd;
+                return dd;
+            };
+            const v1 = parse(dmsMatches[0]), v2 = parse(dmsMatches[1]);
+            const d1 = dmsMatches[0][4].toUpperCase(), d2 = dmsMatches[1][4].toUpperCase();
+            const lat = (d1 === 'N' || d1 === 'S') ? v1 : v2;
+            const lng = (d1 === 'E' || d1 === 'W') ? v1 : v2;
+            if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng, format: 'DMS' };
+        }
+
+        // 3) DMS without symbols: "40 26 46.3 N 79 56 55.5 W"
+        const dmsPlain = /(-?\d+)\s+(\d+)\s+(\d+\.?\d*)\s*([NSEW])[,\s]+(-?\d+)\s+(\d+)\s+(\d+\.?\d*)\s*([NSEW])/i;
+        const dpMatch = s.match(dmsPlain);
+        if (dpMatch) {
+            let lat = parseInt(dpMatch[1]) + parseInt(dpMatch[2]) / 60 + parseFloat(dpMatch[3]) / 3600;
+            if (dpMatch[4].toUpperCase() === 'S') lat = -lat;
+            let lng = parseInt(dpMatch[5]) + parseInt(dpMatch[6]) / 60 + parseFloat(dpMatch[7]) / 3600;
+            if (dpMatch[8].toUpperCase() === 'W') lng = -lng;
+            if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng, format: 'DMS' };
+        }
+
+        // 4) Degrees + Decimal Minutes: 40°26.772'N 79°56.925'W
+        const ddmRegex = /(\d+)[°]\s*(\d+\.?\d*)[′']\s*([NSEW])/gi;
+        const ddmMatches = [...s.matchAll(ddmRegex)];
+        if (ddmMatches.length >= 2) {
+            const parse = (m) => {
+                let dd = parseInt(m[1]) + parseFloat(m[2]) / 60;
+                if (m[3].toUpperCase() === 'S' || m[3].toUpperCase() === 'W') dd = -dd;
+                return dd;
+            };
+            const v1 = parse(ddmMatches[0]), v2 = parse(ddmMatches[1]);
+            const d1 = ddmMatches[0][3].toUpperCase(), d2 = ddmMatches[1][3].toUpperCase();
+            const lat = (d1 === 'N' || d1 === 'S') ? v1 : v2;
+            const lng = (d1 === 'E' || d1 === 'W') ? v1 : v2;
+            if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng, format: 'DDM' };
+        }
+
+        // 5) Google Maps URL: @40.446195,-79.948862,15z
+        const gUrlMatch = s.match(/@([+-]?\d+\.?\d*),([+-]?\d+\.?\d*)/);
+        if (gUrlMatch) {
+            const lat = parseFloat(gUrlMatch[1]), lng = parseFloat(gUrlMatch[2]);
+            if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng, format: 'URL' };
+        }
+
+        return null;
+    }
+
+    _placeSearchMarker(lat, lng, inputText, format) {
+        this._clearSearchMarker();
+        this._searchLatLng = { lat, lng, inputText, format };
+
+        const icon = L.divIcon({
+            className: 'coord-search-marker',
+            html: `<div class="coord-pin"><svg viewBox="0 0 24 36" width="28" height="42"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="#e74c3c" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="11" r="4.5" fill="#fff"/></svg></div>`,
+            iconSize: [28, 42],
+            iconAnchor: [14, 42],
+            popupAnchor: [0, -42]
+        });
+
+        this._searchMarker = L.marker([lat, lng], { icon }).addTo(this.map);
+
+        const popupHtml = this._buildSearchPopup(lat, lng, format);
+        this._searchMarker.bindPopup(popupHtml, { maxWidth: 280, className: 'coord-search-popup' }).openPopup();
+
+        this.map.setView([lat, lng], Math.max(this.map.getZoom(), 14));
+    }
+
+    _buildSearchPopup(lat, lng, format) {
+        return `
+            <div class="coord-popup-content">
+                <div style="font-weight:600;margin-bottom:4px;">📍 ${format} Coordinate</div>
+                <div style="font-size:12px;color:#666;margin-bottom:8px;font-family:monospace;">${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                    <button class="coord-popup-btn coord-add-new" onclick="window.app._coordSearchAddNew()">
+                        ＋ Add as New Layer
+                    </button>
+                    <button class="coord-popup-btn coord-add-existing" onclick="window.app._coordSearchAddToExisting()">
+                        ↳ Add to Existing Layer
+                    </button>
+                    <button class="coord-popup-btn coord-dismiss" onclick="window.app._coordSearchClear()">
+                        ✕ Dismiss
+                    </button>
+                </div>
+            </div>`;
+    }
+
+    _clearSearchMarker() {
+        if (this._searchMarker) {
+            this.map.removeLayer(this._searchMarker);
+            this._searchMarker = null;
+        }
+        this._searchLatLng = null;
+    }
+
+    getSearchLatLng() {
+        return this._searchLatLng;
     }
 }
 

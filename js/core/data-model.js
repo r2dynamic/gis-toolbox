@@ -174,6 +174,8 @@ export function analyzeTableSchema(rows, fieldNames) {
 
 function inferType(values) {
     if (values.length === 0) return 'string';
+    // Check for attachment objects
+    if (values.some(v => v && typeof v === 'object' && v._att)) return 'attachment';
     let numCount = 0, boolCount = 0, dateCount = 0;
     const sample = values.slice(0, 100);
     for (const v of sample) {
@@ -239,7 +241,43 @@ export function mergeDatasets(datasets, addSourceField = true) {
     return createSpatialDataset(name, geojson, { format: 'merge' });
 }
 
+/**
+ * Split a mixed-geometry spatial dataset into separate datasets by geometry category.
+ * Returns an array of datasets (one per category present: Points, Lines, Polygons).
+ * If the dataset has only one geometry category, returns [dataset] unchanged.
+ */
+export function splitByGeometryType(dataset) {
+    if (dataset.type !== 'spatial') return [dataset];
+    const features = dataset.geojson?.features || [];
+    if (features.length === 0) return [dataset];
+
+    const groups = { point: [], line: [], polygon: [] };
+    const labels = { point: 'Points', line: 'Lines', polygon: 'Polygons' };
+
+    for (const f of features) {
+        const t = f.geometry?.type;
+        if (!t) continue;
+        if (t === 'Point' || t === 'MultiPoint') groups.point.push(f);
+        else if (t === 'LineString' || t === 'MultiLineString') groups.line.push(f);
+        else if (t === 'Polygon' || t === 'MultiPolygon') groups.polygon.push(f);
+        else groups.polygon.push(f); // GeometryCollection → polygon bucket
+    }
+
+    const populated = Object.entries(groups).filter(([, feats]) => feats.length > 0);
+    if (populated.length <= 1) return [dataset]; // Already homogeneous
+
+    return populated.map(([gtype, feats]) => {
+        const fc = { type: 'FeatureCollection', features: feats };
+        return createSpatialDataset(
+            `${dataset.name} - ${labels[gtype]}`,
+            fc,
+            { ...dataset.source }
+        );
+    });
+}
+
 export default {
     createSpatialDataset, createTableDataset, tableToSpatial, spatialToTable,
-    analyzeSchema, analyzeTableSchema, getSelectedFields, applyFieldSelection, mergeDatasets
+    analyzeSchema, analyzeTableSchema, getSelectedFields, applyFieldSelection,
+    mergeDatasets, splitByGeometryType
 };

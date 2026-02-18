@@ -41,6 +41,7 @@ class DrawManager {
         this._dblClickHandler = null;
         this._clickTimeout = null;   // debounce clicks vs dblclick
         this._finishing = false;     // guard to prevent clicks during finish
+        this._lastTapTime = 0;       // for mobile double-tap detection
     }
 
     /** Get the Leaflet map instance */
@@ -90,10 +91,15 @@ class DrawManager {
                 </button>
             </div>
             <div class="draw-toolbar-hint"></div>
+            <button class="draw-finish-btn" style="display:none;">✓ Finish</button>
         `;
 
         // Wire buttons
         toolbar.querySelector('.draw-toolbar-close').onclick = () => this.hideToolbar();
+        toolbar.querySelector('.draw-finish-btn').onclick = (e) => {
+            e.stopPropagation();
+            this._finishDraw();
+        };
         toolbar.querySelectorAll('.draw-tool-btn').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
@@ -181,11 +187,18 @@ class DrawManager {
             // Disable default double-click zoom during line/polygon draw
             this.map.doubleClickZoom.disable();
             this.map.on('dblclick', this._dblClickHandler);
-            this._setHint(tool === 'line'
-                ? 'Click to add vertices. Double-click or press Enter to finish.'
-                : 'Click to add vertices. Double-click or press Enter to close polygon.');
+            const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
+            if (isMobile) {
+                this._setHint(tool === 'line'
+                    ? 'Tap to add vertices. Tap Finish when done.'
+                    : 'Tap to add vertices. Tap Finish to close polygon.');
+            } else {
+                this._setHint(tool === 'line'
+                    ? 'Click to add vertices. Double-click or press Enter to finish.'
+                    : 'Click to add vertices. Double-click or press Enter to close polygon.');
+            }
         } else if (tool === 'point') {
-            this._setHint('Click on the map to place a point.');
+            this._setHint(window.innerWidth < 768 ? 'Tap on the map to place a point.' : 'Click on the map to place a point.');
         }
 
         // Also finish line/polygon with Enter key
@@ -209,8 +222,10 @@ class DrawManager {
         this._vertices = [];
         this._tool = null;
         this._finishing = false;
+        this._lastTapTime = 0;
         this._updateToolButtons();
         this._setHint('');
+        this._updateFinishBtn();
 
         // Clear pending click timeout
         if (this._clickTimeout) {
@@ -253,6 +268,21 @@ class DrawManager {
             return;
         }
 
+        // Mobile double-tap detection (since dblclick doesn't fire on touch)
+        const now = Date.now();
+        if (now - this._lastTapTime < 400) {
+            this._lastTapTime = 0;
+            if (this._clickTimeout) { clearTimeout(this._clickTimeout); this._clickTimeout = null; }
+            const minVerts = this._tool === 'polygon' ? 3 : 2;
+            // Add this tap point, then finish if enough vertices
+            this._addVertex(lat, lng);
+            if (this._vertices.length >= minVerts) {
+                this._finishDraw();
+            }
+            return;
+        }
+        this._lastTapTime = now;
+
         // Line or Polygon: delay the click to distinguish from dblclick.
         // If a dblclick fires within 250ms, the pending click is cancelled.
         if (this._clickTimeout) clearTimeout(this._clickTimeout);
@@ -270,11 +300,26 @@ class DrawManager {
         this._updatePreviewLine();
 
         const n = this._vertices.length;
+        const isMobile = window.innerWidth < 768 || 'ontouchstart' in window;
+        const finishHint = isMobile ? 'Tap Finish when done.' : 'Double-click or Enter to finish.';
+        const closeHint = isMobile ? 'Tap Finish to close polygon.' : 'Double-click or Enter to close polygon.';
         if (this._tool === 'line') {
-            this._setHint(`${n} vertex${n > 1 ? 'es' : ''} placed. Double-click or Enter to finish.`);
+            this._setHint(`${n} vertex${n > 1 ? 'es' : ''} placed. ${finishHint}`);
         } else {
-            this._setHint(`${n} vertex${n > 1 ? 'es' : ''} placed. ${n < 3 ? 'Need at least 3.' : 'Double-click or Enter to close polygon.'}`);
+            this._setHint(`${n} vertex${n > 1 ? 'es' : ''} placed. ${n < 3 ? 'Need at least 3.' : closeHint}`);
         }
+
+        // Show/hide the Finish button based on minimum vertex requirement
+        this._updateFinishBtn();
+    }
+
+    /** Show or hide the Finish button in the toolbar */
+    _updateFinishBtn() {
+        if (!this._toolbar) return;
+        const btn = this._toolbar.querySelector('.draw-finish-btn');
+        if (!btn) return;
+        const minVerts = this._tool === 'polygon' ? 3 : 2;
+        btn.style.display = (this._tool === 'line' || this._tool === 'polygon') && this._vertices.length >= minVerts ? '' : 'none';
     }
 
     _onMapMove(e) {

@@ -65,13 +65,20 @@ export async function importFile(file) {
 
         const result = await importer(file, t);
 
-        logger.info('Importer', 'Import complete', {
-            file: file.name,
-            format,
-            type: result.type,
-            features: result.type === 'spatial' ? result.geojson?.features?.length : result.rows?.length,
-            fields: result.schema?.fields?.length
-        });
+        // Log results (handle array returns from multi-layer importers)
+        if (Array.isArray(result)) {
+            logger.info('Importer', 'Import complete (multi-layer)', {
+                file: file.name, format, layers: result.length,
+                totalFeatures: result.reduce((sum, r) => sum + (r.geojson?.features?.length || 0), 0)
+            });
+        } else {
+            logger.info('Importer', 'Import complete', {
+                file: file.name, format,
+                type: result.type,
+                features: result.type === 'spatial' ? result.geojson?.features?.length : result.rows?.length,
+                fields: result.schema?.fields?.length
+            });
+        }
 
         return result;
     });
@@ -83,7 +90,11 @@ export async function importFiles(files) {
     for (const file of files) {
         try {
             const ds = await importFile(file);
-            if (ds) results.push(ds);
+            if (ds) {
+                // An importer may return an array of datasets (e.g. multi-layer shapefile)
+                if (Array.isArray(ds)) results.push(...ds);
+                else results.push(ds);
+            }
         } catch (e) {
             errors.push({ file: file.name, error: e });
             logger.error('Importer', 'File import failed', { file: file.name, error: e.message });

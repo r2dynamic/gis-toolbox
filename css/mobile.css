@@ -234,12 +234,16 @@
     .modal-overlay {
         align-items: center;
         justify-content: center;
+        padding-top: env(safe-area-inset-top, 0);
+        padding-bottom: env(safe-area-inset-bottom, 0);
+        padding-left: env(safe-area-inset-left, 0);
+        padding-right: env(safe-area-inset-right, 0);
     }
     .modal {
         min-width: unset;
         width: 96vw;
         max-width: 96vw;
-        max-height: 92vh;
+        max-height: calc(92vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
         border-radius: var(--radius-lg);
         animation: fadeIn 0.15s ease;
     }
@@ -622,6 +626,24 @@
         padding: 1px 4px !important;
     }
 
+    /* ————— COORD SEARCH on mobile — move to bottom-left ————— */
+    .coord-search-control {
+        position: fixed !important;
+        bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 10px !important;
+        top: auto !important;
+        z-index: 1000;
+        flex-direction: column-reverse !important;
+    }
+    .coord-search-panel {
+        min-width: 200px;
+        margin-top: 0;
+        margin-bottom: 4px;
+    }
+    .coord-search-input {
+        font-size: 14px;
+    }
+
     /* ————— SPLASH / TOOL GUIDE: 99% fullscreen ————— */
     .modal-overlay.splash-overlay {
         z-index: 10000 !important;
@@ -629,8 +651,8 @@
     .splash-modal {
         width: 96vw !important;
         max-width: 96vw !important;
-        height: 94vh !important;
-        max-height: 94vh !important;
+        height: calc(94vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+        max-height: calc(94vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
         border-radius: var(--radius) !important;
     }
     .splash-modal .modal-body {
@@ -785,7 +807,7 @@
     .modal {
         width: 98vw;
         max-width: 98vw;
-        max-height: 94vh;
+        max-height: calc(94vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     }
 }
 
@@ -793,6 +815,11 @@
 @media (min-width: 768px) and (max-width: 1024px) {
     .panel-left { width: 260px; min-width: 200px; }
     .panel-right { width: 240px; min-width: 180px; }
+
+    /* Tighter style panel for narrower right panel */
+    .style-row label { flex: 0 0 70px; font-size: 10px; }
+    .style-row { gap: 4px; }
+    .style-value { flex: 0 0 28px; font-size: 10px; }
     .header-center .btn span.btn-icon-text + span { display: none; }
     .btn { font-size: 12px; padding: 5px 10px; }
     .btn-sm { font-size: 11px; padding: 3px 8px; }
