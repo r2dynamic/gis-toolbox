@@ -449,6 +449,32 @@
         width: 12px;
     }
 
+    /* ————— MAP INTERACTION BANNER: below title pill ————— */
+    .map-interaction-banner {
+        top: calc(56px + env(safe-area-inset-top, 0)) !important;
+        left: 8px !important;
+        right: 8px !important;
+        transform: none !important;
+        max-width: unset;
+        white-space: normal;
+        font-size: 12px;
+        padding: 8px 12px;
+        gap: 8px;
+        z-index: 900 !important;
+    }
+    .map-interaction-banner .interaction-cancel {
+        min-width: 36px;
+        min-height: 36px;
+        border-radius: 50%;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .map-interaction-banner span:last-child {
+        display: none; /* hide '(Esc to cancel)' on mobile */
+    }
+
     /* ————— TOAST: positioned top, full width ————— */
     .toast-container {
         top: calc(16px + env(safe-area-inset-top, 0));

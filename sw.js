@@ -2,26 +2,92 @@
 // GIS Toolbox — Service Worker
 // Bump CACHE_VERSION to push updates
 // ============================================
-const CACHE_VERSION = '1.17.13';
+const CACHE_VERSION = '1.17.15';
 const CACHE_NAME = `gis-toolbox-v${CACHE_VERSION}`;
 
 const APP_FILES = [
     './',
     './index.html',
+    './manifest.json',
+
+    // Styles
     './css/main.css',
     './css/mobile.css',
-    './js/core/session-store.js',
-    './manifest.json',
+
+    // Icons
     './icons/favicon.png',
     './icons/PWAicon.png',
     './icons/TitleIcon.png',
     './icons/MobileAddButton.png',
     './icons/MobileMenuButton.png',
-    './robots.txt',
-    './sitemap.xml'
+
+    // App entry
+    './js/app.js',
+
+    // Core
+    './js/core/data-model.js',
+    './js/core/error-handler.js',
+    './js/core/event-bus.js',
+    './js/core/logger.js',
+    './js/core/session-store.js',
+    './js/core/state.js',
+    './js/core/task-runner.js',
+
+    // Map
+    './js/map/map-manager.js',
+    './js/map/draw-manager.js',
+
+    // UI
+    './js/ui/modals.js',
+    './js/ui/toast.js',
+
+    // Import
+    './js/import/importer.js',
+    './js/import/csv-importer.js',
+    './js/import/excel-importer.js',
+    './js/import/geojson-importer.js',
+    './js/import/json-importer.js',
+    './js/import/kml-importer.js',
+    './js/import/kmz-importer.js',
+    './js/import/shapefile-importer.js',
+
+    // Export
+    './js/export/exporter.js',
+    './js/export/csv-exporter.js',
+    './js/export/excel-exporter.js',
+    './js/export/geojson-exporter.js',
+    './js/export/json-exporter.js',
+    './js/export/kml-exporter.js',
+    './js/export/kmz-exporter.js',
+    './js/export/shapefile-exporter.js',
+
+    // Data prep
+    './js/dataprep/template-builder.js',
+    './js/dataprep/transform-history.js',
+    './js/dataprep/transforms.js',
+
+    // Tools
+    './js/tools/coordinates.js',
+    './js/tools/gis-tools.js',
+
+    // Widgets
+    './js/widgets/widget-base.js',
+    './js/widgets/bulk-update.js',
+    './js/widgets/proximity-join.js',
+    './js/widgets/spatial-analyzer.js',
+
+    // ArcGIS
+    './js/arcgis/endpoints.js',
+    './js/arcgis/rest-importer.js',
+
+    // AGOL
+    './js/agol/compatibility.js',
+
+    // Photo
+    './js/photo/photo-mapper.js'
 ];
 
-// CDN libraries — cached separately, rarely change
+// CDN libraries — versioned, rarely change
 const CDN_FILES = [
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
@@ -40,7 +106,6 @@ self.addEventListener('install', (event) => {
         caches.open(CACHE_NAME).then((cache) => {
             return cache.addAll([...APP_FILES, ...CDN_FILES]);
         }).then(() => {
-            // Activate immediately instead of waiting
             return self.skipWaiting();
         })
     );
@@ -56,17 +121,41 @@ self.addEventListener('activate', (event) => {
                     .map((key) => caches.delete(key))
             );
         }).then(() => {
-            // Take control of all open tabs immediately
             return self.clients.claim();
         })
     );
 });
 
-// Fetch: serve from cache, fall back to network
+// Fetch strategy:
+//   CDN (versioned, immutable) → cache-first
+//   App files → network-first (so code updates are immediate)
+//   Everything else → network only
 self.addEventListener('fetch', (event) => {
-    event.respondWith(
-        caches.match(event.request).then((cached) => {
-            return cached || fetch(event.request);
-        })
-    );
+    const url = event.request.url;
+
+    // CDN libraries — cache-first (they're versioned and never change)
+    if (url.startsWith('https://unpkg.com/') || url.startsWith('https://cdn.sheetjs.com/')) {
+        event.respondWith(
+            caches.match(event.request).then((cached) => cached || fetch(event.request))
+        );
+        return;
+    }
+
+    // App files — network-first (always get latest, fall back to cache offline)
+    if (url.startsWith(self.location.origin)) {
+        event.respondWith(
+            fetch(event.request)
+                .then((response) => {
+                    // Update the cache with the fresh copy
+                    const clone = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+                    return response;
+                })
+                .catch(() => caches.match(event.request))
+        );
+        return;
+    }
+
+    // External requests (API calls, tiles, etc.) — network only, no caching
+    event.respondWith(fetch(event.request));
 });

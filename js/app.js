@@ -1021,6 +1021,7 @@ function setupMobileFlyoutMenus() {
             case 'arcgis': openArcGISImporter(); break;
             case 'photos': openPhotoMapper(); break;
             case 'draw': createDrawLayer(); break;
+            case 'fence': startImportFence(); break;
             case 'location': mobileAddCurrentLocation(); break;
         }
     });
@@ -1088,6 +1089,8 @@ function mobileShowWidgetsModal() {
 
 function mobileShowToolsModal() {
     const layers = getLayers();
+    const isSelMode = mapManager.isSelectionMode();
+    const selCount = mapManager.getSelectedIndices?.(getActiveLayer()?.id)?.length || 0;
     const items = [
         ...(layers.length >= 2 ? [{ label: '🔗 Merge Layers', action: 'mergeLayers', full: true }] : []),
         { label: '📏 Distance', action: 'openDistanceTool' },
@@ -1105,7 +1108,15 @@ function mobileShowToolsModal() {
         { label: '📊 NN Analysis', action: 'openNearestNeighborAnalysis' },
         { label: '📍 Coordinates', action: 'openCoordinatesModal' },
     ];
-    const html = `<div style="display:flex;flex-wrap:wrap;gap:6px;">
+    const html = `
+    <div style="margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <button class="btn btn-sm ${isSelMode ? 'btn-primary' : 'btn-secondary'}" data-action="toggleSelectionMode" style="min-height:38px;">✦ ${isSelMode ? 'Selection ON' : 'Select Features'}</button>
+            ${selCount > 0 ? `<button class="btn btn-sm btn-secondary" data-action="clearSelection" style="min-height:38px;">Clear (${selCount})</button>` : ''}
+        </div>
+        <span style="font-size:10px;color:var(--text-muted);">Tap features on the map to select them for tools below</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
         ${items.map(i => `<button class="btn ${i.full ? 'btn-primary' : 'btn-secondary'} btn-sm" style="flex:1 1 ${i.full ? '100%' : 'calc(50% - 3px)'};min-height:44px;" data-action="${i.action}">${i.label}</button>`).join('')}
     </div>`;
     showModal('GIS Tools', html, {
@@ -1128,38 +1139,120 @@ function mobileShowLayersModal() {
         showToast('No layers loaded yet', 'info');
         return;
     }
-    let html = `<div style="display:flex;flex-direction:column;gap:4px;">`;
-    html += layers.map((l, idx) => {
-        const isActive = l.id === active?.id;
-        const icon = l.type === 'spatial' ? '🗺️' : '📊';
-        const count = l.type === 'spatial'
-            ? `${l.geojson?.features?.length || 0} features`
-            : `${l.rows?.length || 0} rows`;
-        return `
-            <div class="layer-item ${isActive ? 'active' : ''}" style="border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:2px;" onclick="window.app.setActiveLayer('${l.id}')">
+
+    function buildLayerListHtml() {
+        const currentLayers = getLayers();
+        const currentActive = getActiveLayer();
+        let h = `<div style="display:flex;flex-direction:column;gap:4px;">`;
+        h += currentLayers.map((l, idx) => {
+            const isActive = l.id === currentActive?.id;
+            const icon = l.type === 'spatial' ? '🗺️' : '📊';
+            const count = l.type === 'spatial'
+                ? `${l.geojson?.features?.length || 0} features`
+                : `${l.rows?.length || 0} rows`;
+            return `
+            <div class="layer-item ${isActive ? 'active' : ''}" style="border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:2px;" data-layer-id="${l.id}" data-layer-action="select">
                 <span class="layer-icon">${icon}</span>
                 <div class="layer-name-row">
                     <div class="layer-name">${l.name}</div>
                     <div class="layer-order-btns">
-                        <button title="Up" ${idx === 0 ? 'disabled' : ''} onclick="event.stopPropagation(); window.app.moveLayerUp('${l.id}')">▲</button>
-                        <button title="Down" ${idx === layers.length - 1 ? 'disabled' : ''} onclick="event.stopPropagation(); window.app.moveLayerDown('${l.id}')">▼</button>
+                        <button title="Up" ${idx === 0 ? 'disabled' : ''} data-layer-id="${l.id}" data-layer-action="up">▲</button>
+                        <button title="Down" ${idx === currentLayers.length - 1 ? 'disabled' : ''} data-layer-id="${l.id}" data-layer-action="down">▼</button>
                     </div>
                 </div>
                 <div class="layer-bottom-row">
                     <div class="layer-meta">${count} · ${l.schema?.fields?.length || 0} fields</div>
                     <div class="layer-actions">
-                        <button class="btn-icon" title="Rename" onclick="event.stopPropagation(); window.app.renameLayer('${l.id}')">✏️</button>
-                        <button class="btn-icon" title="Toggle" onclick="event.stopPropagation(); window.app.toggleVisibility('${l.id}')">
+                        <button class="btn-icon" title="Rename" data-layer-id="${l.id}" data-layer-action="rename">✏️</button>
+                        <button class="btn-icon" title="Toggle" data-layer-id="${l.id}" data-layer-action="toggle">
                             ${l.visible !== false ? '👁️' : '👁️‍🗨️'}
                         </button>
-                        <button class="btn-icon" title="Zoom" onclick="event.stopPropagation(); window.app.zoomToLayer('${l.id}')">🔍</button>
-                        <button class="btn-icon" title="Remove" onclick="event.stopPropagation(); window.app.removeLayer('${l.id}')">🗑️</button>
+                        <button class="btn-icon" title="Zoom" data-layer-id="${l.id}" data-layer-action="zoom">🔍</button>
+                        <button class="btn-icon" title="Remove" data-layer-id="${l.id}" data-layer-action="remove">🗑️</button>
                     </div>
                 </div>
             </div>`;
-    }).join('');
-    html += `</div>`;
-    showModal('Layers', html);
+        }).join('');
+        h += `</div>`;
+        return h;
+    }
+
+    showModal('Layers', buildLayerListHtml(), {
+        onMount: (overlay, close) => {
+            const refreshModal = () => {
+                const body = overlay.querySelector('.modal-body');
+                if (body) body.innerHTML = buildLayerListHtml();
+            };
+
+            overlay.addEventListener('click', (e) => {
+                const target = e.target.closest('[data-layer-action]');
+                if (!target) return;
+                e.stopPropagation();
+                const id = target.dataset.layerId;
+                const action = target.dataset.layerAction;
+
+                switch (action) {
+                    case 'select':
+                        setActiveLayer(id);
+                        refreshUI();
+                        refreshModal();
+                        break;
+                    case 'up':
+                        moveLayerUp(id);
+                        refreshModal();
+                        break;
+                    case 'down':
+                        moveLayerDown(id);
+                        refreshModal();
+                        break;
+                    case 'rename': {
+                        const layer = getLayers().find(l => l.id === id);
+                        if (layer) {
+                            const newName = prompt('Rename layer:', layer.name);
+                            if (newName && newName.trim() && newName.trim() !== layer.name) {
+                                layer.name = newName.trim();
+                                renderLayerList();
+                                renderOutputPanel();
+                                showToast(`Renamed to "${layer.name}"`, 'success', { duration: 2000 });
+                                refreshModal();
+                            }
+                        }
+                        break;
+                    }
+                    case 'toggle':
+                        toggleLayerVisibility(id);
+                        mapManager.toggleLayer(id, getLayers().find(l => l.id === id)?.visible);
+                        renderLayerList();
+                        refreshModal();
+                        break;
+                    case 'zoom': {
+                        const mapLayer = mapManager.dataLayers.get(id);
+                        if (mapLayer) {
+                            try { mapManager.getMap().fitBounds(mapLayer.getBounds(), { padding: [30, 30] }); } catch(_) {}
+                        }
+                        close(null);
+                        break;
+                    }
+                    case 'remove':
+                        confirm('Remove Layer', 'Remove this layer?').then(ok => {
+                            if (ok) {
+                                removeLayer(id);
+                                mapManager.removeLayer(id);
+                                refreshUI();
+                                if (getLayers().length === 0) {
+                                    close(null);
+                                    showToast('Layer removed', 'success');
+                                } else {
+                                    refreshModal();
+                                    showToast('Layer removed', 'success');
+                                }
+                            }
+                        });
+                        break;
+                }
+            });
+        }
+    });
 }
 
 function mobileShowStylingModal() {
@@ -2102,7 +2195,7 @@ async function openBuffer() {
                     const result = await gisTools.bufferFeatures(getWorkingDataset(layer), dist, units);
                     addLayer(result);
                     mapManager.addLayer(result, getLayers().indexOf(result), { fit: true });
-                    showToast('Buffer complete', 'success');
+                    showToast(`Buffer complete — new layer "${result.name}" created`, 'success');
                     refreshUI();
                 } catch (e) {
                     showErrorToast(handleError(e, 'GISTools', 'Buffer'));
