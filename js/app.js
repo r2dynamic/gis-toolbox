@@ -1915,6 +1915,15 @@ function applyTransform(name, newFeatures) {
             mapManager.addLayer(layer, getLayers().indexOf(layer));
             refreshUI();
         });
+    } else if (layer.type === 'table') {
+        saveSnapshot(layer.id, name, layer.rows);
+        layer.rows = newFeatures.map(f => f.properties ? { ...f.properties } : f);
+        import('./core/data-model.js').then(dm => {
+            layer.schema = dm.analyzeTableSchema(layer.rows, Object.keys(layer.rows[0] || {}));
+            bus.emit('layer:updated', layer);
+            bus.emit('layers:changed', getLayers());
+            refreshUI();
+        });
     }
     showToast(`Applied: ${name}`, 'success');
 }
@@ -1965,7 +1974,7 @@ async function openCombineColumns() {
 
     const html = `
         <div class="form-group"><label>Select fields to combine</label>
-            <div style="max-height:200px;overflow-y:auto;">
+            <div id="cc-fields-list" style="max-height:200px;overflow-y:auto;">
                 ${fields.map(f => `<label class="checkbox-row"><input type="checkbox" value="${f}"> ${f}</label>`).join('')}
             </div></div>
         <div class="form-group"><label>Delimiter</label>
@@ -1979,7 +1988,7 @@ async function openCombineColumns() {
         onMount: (overlay, close) => {
             overlay.querySelector('.cancel-btn').onclick = () => close();
             overlay.querySelector('.apply-btn').onclick = () => {
-                const selected = Array.from(overlay.querySelectorAll('input[type=checkbox]:checked')).map(el => el.value).filter(Boolean);
+                const selected = Array.from(overlay.querySelectorAll('#cc-fields-list input[type=checkbox]:checked')).map(el => el.value).filter(Boolean);
                 if (selected.length === 0) return showToast('Select at least one field', 'warning');
                 const result = transforms.combineColumns(getFeatures(), selected, {
                     delimiter: overlay.querySelector('#cc-delim').value,
@@ -4055,6 +4064,13 @@ function handleUndo() {
                 refreshUI();
                 showToast('Undo', 'info', { duration: 1500 });
             });
+        } else if (layer && layer.type === 'table') {
+            layer.rows = JSON.parse(JSON.stringify(entry.snapshot));
+            import('./core/data-model.js').then(dm => {
+                layer.schema = dm.analyzeTableSchema(layer.rows, Object.keys(layer.rows[0] || {}));
+                refreshUI();
+                showToast('Undo', 'info', { duration: 1500 });
+            });
         }
     }
 }
@@ -4068,6 +4084,13 @@ function handleRedo() {
             import('./core/data-model.js').then(dm => {
                 layer.schema = dm.analyzeSchema(layer.geojson);
                 mapManager.addLayer(layer, getLayers().indexOf(layer));
+                refreshUI();
+                showToast('Redo', 'info', { duration: 1500 });
+            });
+        } else if (layer && layer.type === 'table') {
+            layer.rows = JSON.parse(JSON.stringify(entry.snapshot));
+            import('./core/data-model.js').then(dm => {
+                layer.schema = dm.analyzeTableSchema(layer.rows, Object.keys(layer.rows[0] || {}));
                 refreshUI();
                 showToast('Redo', 'info', { duration: 1500 });
             });

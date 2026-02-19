@@ -30,8 +30,13 @@ export function showModal(title, contentHtml, options = {}) {
         };
 
         overlay.querySelector('.close-modal').onclick = () => close(null);
+
+        // Track where mousedown started so text-selection drags that end
+        // outside the modal don't accidentally close it
+        let mouseDownTarget = null;
+        overlay.addEventListener('mousedown', (e) => { mouseDownTarget = e.target; });
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) close(null);
+            if (e.target === overlay && mouseDownTarget === overlay) close(null);
         });
 
         // Make close and overlay accessible to content scripts
