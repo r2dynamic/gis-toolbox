@@ -1,6 +1,6 @@
 # GIS Toolbox — https://gis-toolbox.com
 User-agent: *
-Allow: /
+Disallow:
 
 # Sitemap
 Sitemap: https://gis-toolbox.com/sitemap.xml
